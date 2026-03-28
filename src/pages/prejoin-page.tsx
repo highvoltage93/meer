@@ -9,7 +9,9 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { useLocalMedia } from '@/hooks/use-local-media';
+import { useMediaDevices } from '@/hooks/use-media-devices';
 import { meetingsApi } from '@/services/api/meetings-api';
+import { useAuthStore } from '@/store/auth-store';
 import { useCallSessionStore } from '@/store/call-session-store';
 import { useMeetingsStore } from '@/store/meetings-store';
 
@@ -22,14 +24,18 @@ export function PreJoinPage() {
   const updatePreferences = useMeetingsStore((state) => state.updateLocalPreferences);
   const setCurrentUserName = useMeetingsStore((state) => state.setCurrentUserName);
   const setCurrentParticipantId = useMeetingsStore((state) => state.setCurrentParticipantId);
+  const ensureGuestSession = useAuthStore((state) => state.ensureGuestSession);
   const meetingError = useMeetingsStore((state) => state.error);
   const isLoadingMeeting = useMeetingsStore((state) => state.isLoading);
   const joinRealtimeRoom = useCallSessionStore((state) => state.joinRoom);
   const realtimeState = useCallSessionStore((state) => state.connectionState);
   const realtimeError = useCallSessionStore((state) => state.error);
+  const { audioInputs, videoInputs, error: devicesError } = useMediaDevices();
   const { stream, error } = useLocalMedia({
     video: preferences.isCameraOn,
     audio: preferences.isMicOn,
+    videoDeviceId: preferences.selectedCameraId,
+    audioDeviceId: preferences.selectedMicrophoneId,
   });
 
   const joinUrl = useMemo(() => `${window.location.origin}/meeting/${meetingId}/prejoin`, [meetingId]);
@@ -107,7 +113,42 @@ export function PreJoinPage() {
               </Button>
             </div>
 
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="block space-y-2">
+                <span className="text-sm text-slate-300">Microphone</span>
+                <select
+                  className="h-12 w-full rounded-2xl border border-white/12 bg-black/20 px-4 text-sm text-white"
+                  value={preferences.selectedMicrophoneId ?? ''}
+                  onChange={(event) => updatePreferences({ selectedMicrophoneId: event.target.value || undefined })}
+                >
+                  <option value="">Default microphone</option>
+                  {audioInputs.map((device) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="block space-y-2">
+                <span className="text-sm text-slate-300">Camera</span>
+                <select
+                  className="h-12 w-full rounded-2xl border border-white/12 bg-black/20 px-4 text-sm text-white"
+                  value={preferences.selectedCameraId ?? ''}
+                  onChange={(event) => updatePreferences({ selectedCameraId: event.target.value || undefined })}
+                >
+                  <option value="">Default camera</option>
+                  {videoInputs.map((device) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
             {error ? <p className="text-sm text-amber-300">{error}</p> : null}
+            {devicesError ? <p className="text-sm text-amber-300">{devicesError}</p> : null}
           </CardContent>
         </Card>
 
@@ -151,6 +192,7 @@ export function PreJoinPage() {
                 variant="accent"
                 size="lg"
                 onClick={async () => {
+                  await ensureGuestSession(preferences.name);
                   const joinPayload = await meetingsApi.requestJoinToken(meetingId, preferences.name);
                   setCurrentUserName(preferences.name);
                   setCurrentParticipantId(joinPayload.participant.id);

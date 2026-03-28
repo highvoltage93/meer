@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { CalendarClock, Link2, Sparkles } from 'lucide-react';
+import { useAuthStore } from '@/store/auth-store';
 import { useMeetingsStore } from '@/store/meetings-store';
 import { Button } from '@/components/ui/button';
 import {
@@ -18,11 +19,13 @@ export function MeetingCreateDialog() {
   const [title, setTitle] = useState('Design Review');
   const [hostName, setHostName] = useState('Alex Johnson');
   const createMeeting = useMeetingsStore((state) => state.createMeeting);
+  const ensureGuestSession = useAuthStore((state) => state.ensureGuestSession);
   const isLoading = useMeetingsStore((state) => state.isLoading);
   const error = useMeetingsStore((state) => state.error);
   const navigate = useNavigate();
 
   async function handleCreate() {
+    await ensureGuestSession(hostName);
     const meetingId = await createMeeting(hostName, title);
     navigate(`/meeting/${meetingId}/prejoin`);
     setOpen(false);

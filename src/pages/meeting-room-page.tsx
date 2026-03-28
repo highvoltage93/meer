@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Copy,
+  Hand,
   MessageSquare,
   Mic,
   MicOff,
@@ -23,6 +24,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useLocalMedia } from '@/hooks/use-local-media';
+import { useMediaDevices } from '@/hooks/use-media-devices';
 import { meetingsApi } from '@/services/api/meetings-api';
 import { useCallSessionStore } from '@/store/call-session-store';
 import { useMeetingsStore } from '@/store/meetings-store';
@@ -33,6 +35,7 @@ export function MeetingRoomPage() {
   const navigate = useNavigate();
   const [chatDraft, setChatDraft] = useState('');
   const [pinnedParticipantId, setPinnedParticipantId] = useState<string | null>(null);
+  const [roomToasts, setRoomToasts] = useState<Array<{ id: string; text: string }>>([]);
   const meeting = useMeetingsStore((state) => state.meetings[meetingId]);
   const fetchMeeting = useMeetingsStore((state) => state.fetchMeeting);
   const currentUserName = useMeetingsStore((state) => state.currentUserName);
@@ -48,15 +51,46 @@ export function MeetingRoomPage() {
   const toggleMicrophone = useCallSessionStore((state) => state.toggleMicrophone);
   const toggleCamera = useCallSessionStore((state) => state.toggleCamera);
   const toggleScreenShare = useCallSessionStore((state) => state.toggleScreenShare);
+  const { audioInputs, videoInputs } = useMediaDevices();
   const { stream } = useLocalMedia({
     video: preferences.isCameraOn,
     audio: preferences.isMicOn,
+    videoDeviceId: preferences.selectedCameraId,
+    audioDeviceId: preferences.selectedMicrophoneId,
   });
 
   useEffect(() => {
     if (!meetingId) return;
     void fetchMeeting(meetingId);
+    let previousParticipantIds = new Set<string>();
     const source = meetingsApi.subscribeToMeeting(meetingId, (nextMeeting) => {
+      const nextIds = new Set(nextMeeting.participants.map((participant) => participant.id));
+      const joined = nextMeeting.participants.filter((participant) => !previousParticipantIds.has(participant.id));
+      const left = Array.from(previousParticipantIds).filter((id) => !nextIds.has(id));
+
+      if (previousParticipantIds.size) {
+        if (joined.length) {
+          setRoomToasts((state) => [
+            ...state,
+            ...joined.map((participant) => ({
+              id: crypto.randomUUID(),
+              text: `${participant.name} joined the room`,
+            })),
+          ]);
+        }
+
+        if (left.length) {
+          setRoomToasts((state) => [
+            ...state,
+            ...left.map((id) => ({
+              id: crypto.randomUUID(),
+              text: `A participant left the room`,
+            })),
+          ]);
+        }
+      }
+
+      previousParticipantIds = nextIds;
       syncMeeting(nextMeeting);
     });
 
@@ -64,6 +98,14 @@ export function MeetingRoomPage() {
       source.close();
     };
   }, [fetchMeeting, meetingId, syncMeeting]);
+
+  useEffect(() => {
+    if (!roomToasts.length) return;
+    const timer = window.setTimeout(() => {
+      setRoomToasts((state) => state.slice(1));
+    }, 2200);
+    return () => window.clearTimeout(timer);
+  }, [roomToasts]);
 
   const mergedParticipants = useMemo(() => {
     if (!meeting) return [] as Array<Participant & { realtimeKey: string; hasRealtime: boolean }>;
@@ -100,6 +142,7 @@ export function MeetingRoomPage() {
         isMicOn: realtime.isMicOn,
         isCameraOn: realtime.isCameraOn,
         isScreenSharing: realtime.isScreenSharing,
+        isHandRaised: false,
         status: 'joined',
         realtimeKey: realtime.id,
         hasRealtime: true,
@@ -139,9 +182,13 @@ export function MeetingRoomPage() {
 
   const roomParticipant = currentParticipant;
   const inviteUrl = `${window.location.origin}/meeting/${meetingId}/prejoin`;
+  const activeSpeaker = realtimeParticipants
+    .filter((participant) => participant.isSpeaking)
+    .sort((a, b) => (b.audioLevel ?? 0) - (a.audioLevel ?? 0))[0];
   const primaryParticipant =
     mergedParticipants.find((participant) => participant.id === pinnedParticipantId) ??
     mergedParticipants.find((participant) => participant.isScreenSharing) ??
+    mergedParticipants.find((participant) => participant.id === activeSpeaker?.id) ??
     roomParticipant;
   const secondaryParticipants = mergedParticipants.filter((participant) => participant.id !== primaryParticipant.id);
 
@@ -166,6 +213,11 @@ export function MeetingRoomPage() {
     toggleParticipantMedia(meetingId, roomParticipant.id, 'isScreenSharing');
     await meetingsApi.updateParticipantState(meetingId, roomParticipant.id, { isScreenSharing: next });
     await toggleScreenShare(next);
+  }
+
+  async function handleToggleHandRaise() {
+    const next = !roomParticipant.isHandRaised;
+    await meetingsApi.updateParticipantState(meetingId, roomParticipant.id, { isHandRaised: next });
   }
 
   async function handleSendChat() {
@@ -211,6 +263,16 @@ export function MeetingRoomPage() {
         </div>
       ) : null}
 
+      {roomToasts.length ? (
+        <div className="pointer-events-none fixed right-6 top-6 z-50 flex max-w-sm flex-col gap-3">
+          {roomToasts.map((toast) => (
+            <div key={toast.id} className="rounded-2xl border border-white/10 bg-slate-950/90 px-4 py-3 text-sm text-white shadow-2xl">
+              {toast.text}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
       <section className="grid flex-1 gap-6 xl:grid-cols-[1.5fr_0.95fr]">
         <div className="space-y-6">
           <Card className="overflow-hidden">
@@ -222,6 +284,8 @@ export function MeetingRoomPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   {primaryParticipant.isScreenSharing ? <Badge variant="accent">Screen share</Badge> : null}
+                  {primaryParticipant.id === activeSpeaker?.id ? <Badge variant="success">Speaking</Badge> : null}
+                  {primaryParticipant.isHandRaised ? <Badge>Hand raised</Badge> : null}
                   {pinnedParticipantId ? (
                     <Button variant="outline" size="sm" onClick={() => setPinnedParticipantId(null)}>
                       Clear pin
@@ -288,7 +352,7 @@ export function MeetingRoomPage() {
 
           <Card>
             <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
-              <div className="flex flex-wrap gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <Button
                   variant={roomParticipant.isMicOn ? 'secondary' : 'destructive'}
                   size="icon"
@@ -310,6 +374,43 @@ export function MeetingRoomPage() {
                 >
                   <MonitorUp className="h-4 w-4" />
                 </Button>
+                <Button
+                  variant={roomParticipant.isHandRaised ? 'accent' : 'outline'}
+                  size="icon"
+                  onClick={() => void handleToggleHandRaise()}
+                >
+                  <Hand className="h-4 w-4" />
+                </Button>
+
+                <select
+                  className="h-11 rounded-full border border-white/12 bg-black/20 px-4 text-sm text-white"
+                  value={preferences.selectedMicrophoneId ?? ''}
+                  onChange={(event) =>
+                    updateLocalPreferences({ selectedMicrophoneId: event.target.value || undefined })
+                  }
+                >
+                  <option value="">Default mic</option>
+                  {audioInputs.map((device) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  className="h-11 rounded-full border border-white/12 bg-black/20 px-4 text-sm text-white"
+                  value={preferences.selectedCameraId ?? ''}
+                  onChange={(event) =>
+                    updateLocalPreferences({ selectedCameraId: event.target.value || undefined })
+                  }
+                >
+                  <option value="">Default cam</option>
+                  {videoInputs.map((device) => (
+                    <option key={device.deviceId} value={device.deviceId}>
+                      {device.label}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div className="flex items-center gap-3 text-sm text-slate-300">
@@ -407,9 +508,16 @@ export function MeetingRoomPage() {
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
+                      {participant.id === activeSpeaker?.id ? <Badge variant="success">Speaking</Badge> : null}
                       {participant.isScreenSharing ? <Badge variant="accent">Sharing</Badge> : null}
+                      {participant.isHandRaised ? <Badge>Hand raised</Badge> : null}
                       {participant.name === currentUserName ? <Badge variant="accent">You</Badge> : null}
                       {participant.hasRealtime ? <Badge variant="success">Live</Badge> : null}
+                      {(() => {
+                        const realtime = realtimeParticipants.find((item) => item.id === participant.id);
+                        if (!realtime?.connectionQuality || realtime.connectionQuality === 'unknown') return null;
+                        return <Badge>{realtime.connectionQuality}</Badge>;
+                      })()}
                     </div>
                   </div>
                 ))}

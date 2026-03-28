@@ -1,5 +1,6 @@
 import {
   ConnectionState,
+  ConnectionQuality,
   LocalTrackPublication,
   LocalParticipant,
   Room,
@@ -125,6 +126,9 @@ export class LiveKitRealtimeProvider implements RealtimeProvider {
       isMicOn: participant.isMicrophoneEnabled,
       isCameraOn: participant.isCameraEnabled,
       isScreenSharing: participant.isScreenShareEnabled,
+      audioLevel: participant.audioLevel,
+      isSpeaking: participant.isSpeaking,
+      connectionQuality: this.mapConnectionQuality(participant.connectionQuality),
       cameraTrack: this.extractLocalTrack(participant, Track.Source.Camera),
       screenShareTrack: this.extractLocalTrack(participant, Track.Source.ScreenShare),
     };
@@ -145,6 +149,9 @@ export class LiveKitRealtimeProvider implements RealtimeProvider {
           !publication.isMuted,
       ),
       isScreenSharing: publications.some((publication) => publication.source === Track.Source.ScreenShare),
+      audioLevel: participant.audioLevel,
+      isSpeaking: participant.isSpeaking,
+      connectionQuality: this.mapConnectionQuality(participant.connectionQuality),
       cameraTrack: this.extractRemoteTrack(participant, Track.Source.Camera),
       screenShareTrack: this.extractRemoteTrack(participant, Track.Source.ScreenShare),
     };
@@ -158,5 +165,20 @@ export class LiveKitRealtimeProvider implements RealtimeProvider {
   private extractRemoteTrack(participant: RemoteParticipant, source: Track.Source) {
     const publication = participant.getTrackPublication(source) as RemoteTrackPublication | undefined;
     return publication?.track?.mediaStreamTrack ?? null;
+  }
+
+  private mapConnectionQuality(value: ConnectionQuality): RealtimeParticipant['connectionQuality'] {
+    switch (value) {
+      case ConnectionQuality.Excellent:
+        return 'excellent';
+      case ConnectionQuality.Good:
+        return 'good';
+      case ConnectionQuality.Poor:
+        return 'poor';
+      case ConnectionQuality.Lost:
+        return 'lost';
+      default:
+        return 'unknown';
+    }
   }
 }

@@ -13,6 +13,9 @@ export type RealtimeParticipant = {
   isMicOn: boolean;
   isCameraOn: boolean;
   isScreenSharing: boolean;
+  audioLevel?: number;
+  isSpeaking?: boolean;
+  connectionQuality?: 'excellent' | 'good' | 'poor' | 'lost' | 'unknown';
   cameraTrack?: MediaStreamTrack | null;
   screenShareTrack?: MediaStreamTrack | null;
 };

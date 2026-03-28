@@ -13,6 +13,7 @@ export type Participant = {
   isMicOn: boolean;
   isCameraOn: boolean;
   isScreenSharing: boolean;
+  isHandRaised: boolean;
   status: 'joined' | 'waiting';
 };
 
@@ -30,10 +31,13 @@ export type JoinPreferences = {
   name: string;
   isMicOn: boolean;
   isCameraOn: boolean;
+  selectedMicrophoneId?: string;
+  selectedCameraId?: string;
 };
 
 export type MeetingParticipantStatePatch = {
   isMicOn?: boolean;
   isCameraOn?: boolean;
   isScreenSharing?: boolean;
+  isHandRaised?: boolean;
 };

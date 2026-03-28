@@ -1,6 +1,18 @@
 import { env } from '@/config/env';
 import type { ActivityEntry, Meeting, MeetingParticipantStatePatch, Participant } from '@/types/meeting';
 
+function getSessionToken() {
+  const raw = localStorage.getItem('mitingo-auth-storage');
+  if (!raw) return undefined;
+
+  try {
+    const parsed = JSON.parse(raw) as { state?: { session?: { token?: string } } };
+    return parsed.state?.session?.token;
+  } catch {
+    return undefined;
+  }
+}
+
 type ApiMeeting = {
   id: string;
   title: string;
@@ -16,6 +28,7 @@ type ApiMeeting = {
     isMicOn: boolean;
     isCameraOn: boolean;
     isScreenSharing: boolean;
+    isHandRaised: boolean;
   }>;
   messages: Array<{
     id: string;
@@ -39,9 +52,11 @@ type JoinTokenResponse = {
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const sessionToken = getSessionToken();
   const response = await fetch(`${env.apiBaseUrl}${path}`, {
     headers: {
       'Content-Type': 'application/json',
+      ...(sessionToken ? { 'x-session-token': sessionToken } : {}),
       ...(init?.headers ?? {}),
     },
     ...init,
@@ -63,6 +78,7 @@ function toParticipant(participant: ApiMeeting['participants'][number]): Partici
     isMicOn: participant.isMicOn,
     isCameraOn: participant.isCameraOn,
     isScreenSharing: participant.isScreenSharing,
+    isHandRaised: participant.isHandRaised,
     status: 'joined',
   };
 }
@@ -118,6 +134,7 @@ export const meetingsApi = {
           isMicOn: true,
           isCameraOn: true,
           isScreenSharing: false,
+          isHandRaised: false,
           status: 'joined' as const,
         },
       ],

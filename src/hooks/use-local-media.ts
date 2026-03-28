@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 
-export function useLocalMedia(enabled: { video: boolean; audio: boolean }) {
+export function useLocalMedia(enabled: {
+  video: boolean;
+  audio: boolean;
+  videoDeviceId?: string;
+  audioDeviceId?: string;
+}) {
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
   const lastStream = useRef<MediaStream | null>(null);
@@ -18,8 +23,16 @@ export function useLocalMedia(enabled: { video: boolean; audio: boolean }) {
 
       try {
         const nextStream = await navigator.mediaDevices.getUserMedia({
-          video: enabled.video,
-          audio: enabled.audio,
+          video: enabled.video
+            ? enabled.videoDeviceId
+              ? { deviceId: { exact: enabled.videoDeviceId } }
+              : true
+            : false,
+          audio: enabled.audio
+            ? enabled.audioDeviceId
+              ? { deviceId: { exact: enabled.audioDeviceId } }
+              : true
+            : false,
         });
 
         if (cancelled) {
@@ -41,7 +54,7 @@ export function useLocalMedia(enabled: { video: boolean; audio: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [enabled.audio, enabled.video]);
+  }, [enabled.audio, enabled.audioDeviceId, enabled.video, enabled.videoDeviceId]);
 
   useEffect(
     () => () => {

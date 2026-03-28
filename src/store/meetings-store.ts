@@ -51,6 +51,8 @@ export const useMeetingsStore = create<MeetingsState>()(
         name: 'Guest User',
         isMicOn: true,
         isCameraOn: true,
+        selectedMicrophoneId: undefined,
+        selectedCameraId: undefined,
       },
       createMeeting: async (hostName, title = 'Strategy Sync') => {
         set({ isLoading: true, error: undefined });
@@ -70,6 +72,8 @@ export const useMeetingsStore = create<MeetingsState>()(
               name: hostName,
               isMicOn: true,
               isCameraOn: true,
+              selectedMicrophoneId: undefined,
+              selectedCameraId: undefined,
             },
             isLoading: false,
           }));
@@ -136,6 +140,7 @@ export const useMeetingsStore = create<MeetingsState>()(
           isMicOn: preferences.isMicOn,
           isCameraOn: preferences.isCameraOn,
           isScreenSharing: existing?.isScreenSharing ?? false,
+          isHandRaised: existing?.isHandRaised ?? false,
           status: 'joined',
         };
 

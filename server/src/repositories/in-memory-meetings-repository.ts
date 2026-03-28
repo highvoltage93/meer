@@ -4,6 +4,8 @@ import type {
   MeetingParticipantRecord,
   MeetingRecord,
   MeetingRole,
+  SessionRecord,
+  UserRecord,
 } from '../types/meeting.js';
 import type { MeetingsRepository } from './meetings-repository.js';
 
@@ -18,12 +20,44 @@ export class InMemoryMeetingsRepository implements MeetingsRepository {
   private meetings = new Map<string, MeetingRecord>();
   private participants = new Map<string, MeetingParticipantRecord[]>();
   private messages = new Map<string, MeetingMessageRecord[]>();
+  private users = new Map<string, UserRecord>();
+  private sessions = new Map<string, SessionRecord>();
 
-  createMeeting(input: { title: string; hostName: string }): MeetingRecord {
+  async createUser(input: { displayName: string }): Promise<UserRecord> {
+    const user: UserRecord = {
+      id: randomUUID(),
+      displayName: input.displayName,
+      createdAt: new Date().toISOString(),
+    };
+
+    this.users.set(user.id, user);
+    return user;
+  }
+
+  async getUserById(id: string): Promise<UserRecord | undefined> {
+    return this.users.get(id);
+  }
+
+  async createSession(userId: string): Promise<SessionRecord> {
+    const session: SessionRecord = {
+      token: randomUUID(),
+      userId,
+      createdAt: new Date().toISOString(),
+    };
+    this.sessions.set(session.token, session);
+    return session;
+  }
+
+  async getSession(token: string): Promise<SessionRecord | undefined> {
+    return this.sessions.get(token);
+  }
+
+  async createMeeting(input: { title: string; hostName: string; hostUserId: string }): Promise<MeetingRecord> {
     const meeting: MeetingRecord = {
       id: randomUUID(),
       code: createMeetingCode(),
       title: input.title,
+      hostUserId: input.hostUserId,
       hostName: input.hostName,
       status: 'active',
       createdAt: new Date().toISOString(),
@@ -36,15 +70,19 @@ export class InMemoryMeetingsRepository implements MeetingsRepository {
     return meeting;
   }
 
-  getMeetingById(id: string) {
+  async getMeetingById(id: string): Promise<MeetingRecord | undefined> {
     return this.meetings.get(id);
   }
 
-  getMeetingByCode(code: string) {
+  async getMeetingByCode(code: string): Promise<MeetingRecord | undefined> {
     return Array.from(this.meetings.values()).find((meeting) => meeting.code === code);
   }
 
-  addParticipant(input: { meetingId: string; name: string; role: MeetingRole }): MeetingParticipantRecord {
+  async addParticipant(input: {
+    meetingId: string;
+    name: string;
+    role: MeetingRole;
+  }): Promise<MeetingParticipantRecord> {
     const participant: MeetingParticipantRecord = {
       id: randomUUID(),
       meetingId: input.meetingId,
@@ -54,6 +92,7 @@ export class InMemoryMeetingsRepository implements MeetingsRepository {
       isMicOn: true,
       isCameraOn: true,
       isScreenSharing: false,
+      isHandRaised: false,
     };
 
     const current = this.participants.get(input.meetingId) ?? [];
@@ -61,11 +100,11 @@ export class InMemoryMeetingsRepository implements MeetingsRepository {
     return participant;
   }
 
-  listParticipants(meetingId: string) {
+  async listParticipants(meetingId: string): Promise<MeetingParticipantRecord[]> {
     return this.participants.get(meetingId) ?? [];
   }
 
-  removeParticipant(meetingId: string, participantId: string) {
+  async removeParticipant(meetingId: string, participantId: string): Promise<void> {
     const current = this.participants.get(meetingId) ?? [];
     this.participants.set(
       meetingId,
@@ -73,11 +112,13 @@ export class InMemoryMeetingsRepository implements MeetingsRepository {
     );
   }
 
-  updateParticipantState(
+  async updateParticipantState(
     meetingId: string,
     participantId: string,
-    patch: Partial<Pick<MeetingParticipantRecord, 'isMicOn' | 'isCameraOn' | 'isScreenSharing'>>,
-  ) {
+    patch: Partial<
+      Pick<MeetingParticipantRecord, 'isMicOn' | 'isCameraOn' | 'isScreenSharing' | 'isHandRaised'>
+    >,
+  ): Promise<MeetingParticipantRecord | undefined> {
     const current = this.participants.get(meetingId) ?? [];
     let updated: MeetingParticipantRecord | undefined;
 
@@ -93,10 +134,16 @@ export class InMemoryMeetingsRepository implements MeetingsRepository {
     return updated;
   }
 
-  addMessage(input: { meetingId: string; senderName: string; body: string }): MeetingMessageRecord {
+  async addMessage(input: {
+    meetingId: string;
+    senderName: string;
+    senderUserId?: string;
+    body: string;
+  }): Promise<MeetingMessageRecord> {
     const message: MeetingMessageRecord = {
       id: randomUUID(),
       meetingId: input.meetingId,
+      senderUserId: input.senderUserId,
       senderName: input.senderName,
       body: input.body,
       createdAt: new Date().toISOString(),
@@ -107,7 +154,7 @@ export class InMemoryMeetingsRepository implements MeetingsRepository {
     return message;
   }
 
-  listMessages(meetingId: string) {
+  async listMessages(meetingId: string): Promise<MeetingMessageRecord[]> {
     return this.messages.get(meetingId) ?? [];
   }
 }

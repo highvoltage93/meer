@@ -8,14 +8,30 @@ const webhookSchema = z.object({
 });
 
 export const meetingRoutes: FastifyPluginAsync = async (app) => {
+  app.post('/auth/guest-session', async (request, reply) => {
+    const result = await app.authService.createGuestSession(request.body);
+    return reply.code(201).send(result);
+  });
+
   app.post('/meetings', async (request, reply) => {
-    const meeting = app.meetingsService.createMeeting(request.body);
+    const auth = await app.authService.getUserFromSessionToken(
+      request.headers['x-session-token'] as string | undefined,
+    );
+
+    if (!auth) {
+      throw app.httpErrors.unauthorized('Session required');
+    }
+
+    const meeting = await app.meetingsService.createMeeting(request.body, {
+      userId: auth.user.id,
+      displayName: auth.user.displayName,
+    });
     return reply.code(201).send(meeting);
   });
 
   app.get('/meetings/:meetingId', async (request, reply) => {
     const { meetingId } = request.params as { meetingId: string };
-    const meeting = app.meetingsService.getMeeting(meetingId);
+    const meeting = await app.meetingsService.getMeeting(meetingId);
 
     if (!meeting) {
       throw app.httpErrors.notFound('Meeting not found');
@@ -26,7 +42,7 @@ export const meetingRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/meetings/by-code/:code', async (request, reply) => {
     const { code } = request.params as { code: string };
-    const meeting = app.meetingsService.getMeetingByCode(code);
+    const meeting = await app.meetingsService.getMeetingByCode(code);
 
     if (!meeting) {
       throw app.httpErrors.notFound('Meeting not found');
@@ -48,7 +64,10 @@ export const meetingRoutes: FastifyPluginAsync = async (app) => {
 
   app.post('/meetings/:meetingId/chat', async (request, reply) => {
     const { meetingId } = request.params as { meetingId: string };
-    const message = app.meetingsService.createMessage(meetingId, request.body);
+    const auth = await app.authService.getUserFromSessionToken(
+      request.headers['x-session-token'] as string | undefined,
+    );
+    const message = await app.meetingsService.createMessage(meetingId, request.body, auth?.user.id);
 
     if (!message) {
       throw app.httpErrors.notFound('Meeting not found');
@@ -59,7 +78,7 @@ export const meetingRoutes: FastifyPluginAsync = async (app) => {
 
   app.patch('/meetings/:meetingId/participants/:participantId/state', async (request, reply) => {
     const { meetingId, participantId } = request.params as { meetingId: string; participantId: string };
-    const participant = app.meetingsService.updateParticipantState(meetingId, participantId, request.body);
+    const participant = await app.meetingsService.updateParticipantState(meetingId, participantId, request.body);
 
     if (!participant) {
       throw app.httpErrors.notFound('Participant not found');
@@ -70,7 +89,7 @@ export const meetingRoutes: FastifyPluginAsync = async (app) => {
 
   app.delete('/meetings/:meetingId/participants/:participantId', async (request, reply) => {
     const { meetingId, participantId } = request.params as { meetingId: string; participantId: string };
-    const removed = app.meetingsService.removeParticipant(meetingId, participantId);
+    const removed = await app.meetingsService.removeParticipant(meetingId, participantId);
 
     if (!removed) {
       throw app.httpErrors.notFound('Meeting not found');
@@ -81,7 +100,7 @@ export const meetingRoutes: FastifyPluginAsync = async (app) => {
 
   app.get('/meetings/:meetingId/events', async (request, reply) => {
     const { meetingId } = request.params as { meetingId: string };
-    const meeting = app.meetingsService.getMeeting(meetingId);
+    const meeting = await app.meetingsService.getMeeting(meetingId);
 
     if (!meeting) {
       throw app.httpErrors.notFound('Meeting not found');
