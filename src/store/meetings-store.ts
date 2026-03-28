@@ -1,38 +1,33 @@
 import { create } from 'zustand';
 import { persist, createJSONStorage } from 'zustand/middleware';
-import { createMeetingCode } from '@/lib/utils';
+import { meetingsApi } from '@/services/api/meetings-api';
 import type { ActivityEntry, JoinPreferences, Meeting, Participant } from '@/types/meeting';
 
 type MeetingsState = {
   meetings: Record<string, Meeting>;
   activeMeetingId?: string;
   currentUserName: string;
+  currentParticipantId?: string;
   localPreferences: JoinPreferences;
-  createMeeting: (hostName: string, title?: string) => string;
-  joinMeeting: (meetingId: string, preferences: JoinPreferences) => void;
+  isLoading: boolean;
+  error?: string;
+  createMeeting: (hostName: string, title?: string) => Promise<string>;
+  fetchMeeting: (meetingId: string) => Promise<Meeting | null>;
+  fetchMeetingByCode: (code: string) => Promise<Meeting | null>;
+  joinMeeting: (meetingId: string, preferences: JoinPreferences) => Promise<void>;
+  syncMeeting: (meeting: Meeting) => void;
   setCurrentUserName: (name: string) => void;
+  setCurrentParticipantId: (participantId?: string) => void;
   updateLocalPreferences: (patch: Partial<JoinPreferences>) => void;
   toggleParticipantMedia: (
     meetingId: string,
     participantId: string,
     key: 'isMicOn' | 'isCameraOn' | 'isScreenSharing',
   ) => void;
-  addChatMessage: (meetingId: string, author: string, text: string) => void;
+  addChatMessage: (meetingId: string, author: string, text: string) => Promise<void>;
   leaveMeeting: (meetingId: string, participantId: string) => void;
   getMeetingByCode: (code: string) => Meeting | undefined;
 };
-
-function createBot(id: string, name: string, camera = true): Participant {
-  return {
-    id,
-    name,
-    role: 'bot',
-    isMicOn: false,
-    isCameraOn: camera,
-    isScreenSharing: false,
-    status: 'joined',
-  };
-}
 
 function createSystemActivity(text: string): ActivityEntry {
   return {
@@ -43,71 +38,95 @@ function createSystemActivity(text: string): ActivityEntry {
   };
 }
 
-const starterParticipants = [
-  createBot('bot-design', 'Design Reviewer', true),
-  createBot('bot-product', 'Product Ops', false),
-];
-
 export const useMeetingsStore = create<MeetingsState>()(
   persist(
     (set, get) => ({
       meetings: {},
       activeMeetingId: undefined,
+      isLoading: false,
+      error: undefined,
       currentUserName: 'Guest User',
+      currentParticipantId: undefined,
       localPreferences: {
         name: 'Guest User',
         isMicOn: true,
         isCameraOn: true,
       },
-      createMeeting: (hostName, title = 'Strategy Sync') => {
-        const code = createMeetingCode();
-        const meetingId = crypto.randomUUID();
-        const hostId = crypto.randomUUID();
+      createMeeting: async (hostName, title = 'Strategy Sync') => {
+        set({ isLoading: true, error: undefined });
 
-        const host: Participant = {
-          id: hostId,
-          name: hostName,
-          role: 'host',
-          isMicOn: true,
-          isCameraOn: true,
-          isScreenSharing: false,
-          status: 'joined',
-        };
+        try {
+          const meeting = await meetingsApi.createMeeting({ hostName, title });
 
-        const meeting: Meeting = {
-          id: meetingId,
-          title,
-          code,
-          createdAt: new Date().toISOString(),
-          hostName,
-          participants: [host, ...starterParticipants],
-          activity: [
-            createSystemActivity(`${hostName} created the meeting.`),
-            createSystemActivity('Invite collaborators with the meeting code or link.'),
-          ],
-        };
+          set((state) => ({
+            meetings: {
+              ...state.meetings,
+              [meeting.id]: meeting,
+            },
+            activeMeetingId: meeting.id,
+            currentUserName: hostName,
+            currentParticipantId: meeting.participants[0]?.id,
+            localPreferences: {
+              name: hostName,
+              isMicOn: true,
+              isCameraOn: true,
+            },
+            isLoading: false,
+          }));
 
-        set((state) => ({
-          meetings: {
-            ...state.meetings,
-            [meetingId]: meeting,
-          },
-          activeMeetingId: meetingId,
-          currentUserName: hostName,
-          localPreferences: {
-            name: hostName,
-            isMicOn: true,
-            isCameraOn: true,
-          },
-        }));
-
-        return meetingId;
+          return meeting.id;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Failed to create meeting';
+          set({ isLoading: false, error: message });
+          throw error;
+        }
       },
-      joinMeeting: (meetingId, preferences) => {
-        const meeting = get().meetings[meetingId];
-        if (!meeting) return;
+      fetchMeeting: async (meetingId) => {
+        set({ isLoading: true, error: undefined });
 
-        const existing = meeting.participants.find((participant) => participant.name === preferences.name);
+        try {
+          const meeting = await meetingsApi.getMeeting(meetingId);
+          set((state) => ({
+            meetings: {
+              ...state.meetings,
+              [meeting.id]: meeting,
+            },
+            isLoading: false,
+          }));
+          return meeting;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Failed to load meeting';
+          set({ isLoading: false, error: message });
+          return null;
+        }
+      },
+      fetchMeetingByCode: async (code) => {
+        set({ isLoading: true, error: undefined });
+
+        try {
+          const meeting = await meetingsApi.getMeetingByCode(code);
+          set((state) => ({
+            meetings: {
+              ...state.meetings,
+              [meeting.id]: meeting,
+            },
+            isLoading: false,
+          }));
+          return meeting;
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Failed to find meeting';
+          set({ isLoading: false, error: message });
+          return null;
+        }
+      },
+      joinMeeting: async (meetingId, preferences) => {
+        const cachedMeeting = get().meetings[meetingId];
+        const resolvedMeeting = cachedMeeting ?? (await get().fetchMeeting(meetingId)) ?? undefined;
+        if (!resolvedMeeting) {
+          return;
+        }
+
+        const existing = resolvedMeeting.participants.find((participant) => participant.name === preferences.name);
         const participantId = existing?.id ?? crypto.randomUUID();
 
         const participant: Participant = {
@@ -124,13 +143,13 @@ export const useMeetingsStore = create<MeetingsState>()(
           meetings: {
             ...state.meetings,
             [meetingId]: {
-              ...meeting,
+              ...resolvedMeeting,
               participants: [
-                ...meeting.participants.filter((item) => item.id !== participantId),
+                ...resolvedMeeting.participants.filter((item) => item.id !== participantId),
                 participant,
               ],
               activity: [
-                ...meeting.activity,
+                ...resolvedMeeting.activity,
                 createSystemActivity(`${preferences.name} joined the meeting.`),
               ],
             },
@@ -140,6 +159,13 @@ export const useMeetingsStore = create<MeetingsState>()(
           localPreferences: preferences,
         }));
       },
+      syncMeeting: (meeting) =>
+        set((state) => ({
+          meetings: {
+            ...state.meetings,
+            [meeting.id]: meeting,
+          },
+        })),
       setCurrentUserName: (name) =>
         set((state) => ({
           currentUserName: name,
@@ -148,6 +174,10 @@ export const useMeetingsStore = create<MeetingsState>()(
             name,
           },
         })),
+      setCurrentParticipantId: (participantId) =>
+        set({
+          currentParticipantId: participantId,
+        }),
       updateLocalPreferences: (patch) =>
         set((state) => ({
           localPreferences: {
@@ -182,9 +212,11 @@ export const useMeetingsStore = create<MeetingsState>()(
           },
         }));
       },
-      addChatMessage: (meetingId, author, text) => {
+      addChatMessage: async (meetingId, author, text) => {
         const meeting = get().meetings[meetingId];
         if (!meeting || !text.trim()) return;
+
+        const response = await meetingsApi.sendMessage(meetingId, author, text);
 
         set((state) => ({
           meetings: {
@@ -194,10 +226,10 @@ export const useMeetingsStore = create<MeetingsState>()(
               activity: [
                 ...meeting.activity,
                 {
-                  id: crypto.randomUUID(),
-                  author,
-                  text,
-                  timestamp: new Date().toISOString(),
+                  id: response.id,
+                  author: response.senderName,
+                  text: response.body,
+                  timestamp: response.createdAt,
                   type: 'chat',
                 },
               ],
@@ -236,7 +268,9 @@ export const useMeetingsStore = create<MeetingsState>()(
         meetings: state.meetings,
         activeMeetingId: state.activeMeetingId,
         currentUserName: state.currentUserName,
+        currentParticipantId: state.currentParticipantId,
         localPreferences: state.localPreferences,
+        error: state.error,
       }),
     },
   ),

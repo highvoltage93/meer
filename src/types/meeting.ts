@@ -31,3 +31,9 @@ export type JoinPreferences = {
   isMicOn: boolean;
   isCameraOn: boolean;
 };
+
+export type MeetingParticipantStatePatch = {
+  isMicOn?: boolean;
+  isCameraOn?: boolean;
+  isScreenSharing?: boolean;
+};

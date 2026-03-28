@@ -7,17 +7,25 @@ import type { Participant } from '@/types/meeting';
 export function ParticipantTile({
   participant,
   isActive = false,
+  isPinned = false,
   videoElement,
+  onClick,
 }: {
   participant: Participant;
   isActive?: boolean;
+  isPinned?: boolean;
   videoElement?: React.ReactNode;
+  onClick?: () => void;
 }) {
   return (
-    <div
+    <button
+      type="button"
+      onClick={onClick}
       className={cn(
-        'group relative overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.15),rgba(2,6,23,0.88))] p-4',
+        'group relative block w-full overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.15),rgba(2,6,23,0.88))] p-4 text-left',
         isActive && 'ring-1 ring-cyan-300/60',
+        isPinned && 'ring-1 ring-amber-300/70',
+        onClick && 'transition hover:border-cyan-300/40',
       )}
     >
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(103,232,249,0.12),transparent_34%)]" />
@@ -37,6 +45,7 @@ export function ParticipantTile({
           <div className="flex items-center gap-2">
             <p className="font-medium text-white">{participant.name}</p>
             {participant.role === 'host' ? <Badge variant="accent">Host</Badge> : null}
+            {isPinned ? <Badge>Pinned</Badge> : null}
           </div>
           <p className="mt-1 text-sm text-slate-400">
             {participant.status === 'joined' ? 'In call' : 'Waiting room'}
@@ -49,6 +58,6 @@ export function ParticipantTile({
           {participant.isScreenSharing ? <MonitorUp className="h-4 w-4 text-cyan-300" /> : null}
         </div>
       </div>
-    </div>
+    </button>
   );
 }

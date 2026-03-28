@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { env } from '@/config/env';
 import { formatMeetingCode } from '@/lib/utils';
 import { useMeetingsStore } from '@/store/meetings-store';
 
@@ -15,15 +16,17 @@ export function HomePage() {
   const navigate = useNavigate();
   const [code, setCode] = useState('');
   const meetings = useMeetingsStore((state) => state.meetings);
-  const getMeetingByCode = useMeetingsStore((state) => state.getMeetingByCode);
+  const fetchMeetingByCode = useMeetingsStore((state) => state.fetchMeetingByCode);
+  const isLoading = useMeetingsStore((state) => state.isLoading);
+  const error = useMeetingsStore((state) => state.error);
 
   const recentMeetings = useMemo(
     () => Object.values(meetings).sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 3),
     [meetings],
   );
 
-  function handleJoin() {
-    const meeting = getMeetingByCode(code);
+  async function handleJoin() {
+    const meeting = await fetchMeetingByCode(code);
     if (!meeting) return;
     navigate(`/meeting/${meeting.id}/prejoin`);
   }
@@ -33,7 +36,7 @@ export function HomePage() {
       <header className="flex flex-col gap-6 py-6 lg:flex-row lg:items-center lg:justify-between">
         <MitingoLogo />
         <div className="flex items-center gap-3">
-          <Badge variant="success">Frontend MVP</Badge>
+          <Badge variant="success">Backend connected</Badge>
           <Badge>Meet style flow</Badge>
         </div>
       </header>
@@ -47,7 +50,7 @@ export function HomePage() {
             Clean meeting UX inspired by Google Meet, shaped for modern product teams.
           </h1>
           <p className="mt-6 max-w-lg text-lg leading-8 text-slate-300">
-            Create a room, share a code, preview devices, join the call, manage local media states, and keep the experience simple enough for a fast MVP.
+            Create a room, share a code, preview devices, join the call, and progressively switch from mock transport to real media infrastructure.
           </p>
 
           <div className="mt-10 flex flex-col gap-4 sm:flex-row">
@@ -59,12 +62,17 @@ export function HomePage() {
                 value={code}
                 onChange={(event) => setCode(formatMeetingCode(event.target.value))}
               />
-              <Button variant="secondary" onClick={handleJoin} disabled={code.length < 11}>
+              <Button
+                variant="secondary"
+                onClick={() => void handleJoin()}
+                disabled={code.length < 11 || isLoading}
+              >
                 Join
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
           </div>
+          {error ? <p className="mt-4 text-sm text-rose-300">{error}</p> : null}
 
           <div className="mt-10 grid gap-4 sm:grid-cols-3">
             <FeatureCard
@@ -75,12 +83,12 @@ export function HomePage() {
             <FeatureCard
               icon={<Lock className="h-5 w-5 text-cyan-300" />}
               title="Invite by code"
-              description="Local meeting IDs and shareable room links."
+              description="Server-backed meeting lookup and shareable room links."
             />
             <FeatureCard
               icon={<Compass className="h-5 w-5 text-cyan-300" />}
               title="Scalable MVP"
-              description="Prepared for real-time backend and WebRTC later."
+              description="Prepared for API-backed realtime media and persistence."
             />
           </div>
         </div>
@@ -93,10 +101,25 @@ export function HomePage() {
                 <p className="text-sm uppercase tracking-[0.25em] text-cyan-200/80">Today</p>
                 <h2 className="mt-2 text-3xl font-semibold">Meetings in motion</h2>
               </div>
-              <Badge variant="success">{recentMeetings.length} active drafts</Badge>
+              <Badge variant="success">{recentMeetings.length} cached rooms</Badge>
             </div>
 
             <div className="grid gap-4">
+              <div className="rounded-[26px] border border-cyan-300/15 bg-cyan-300/8 p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-cyan-100/80">Realtime architecture</p>
+                <p className="mt-3 text-lg font-medium text-white">
+                  Provider: {env.realtimeProvider === 'livekit' ? 'LiveKit' : 'Mock transport'}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  API base URL: {env.apiBaseUrl}
+                </p>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  {env.isLivekitConfigured
+                    ? 'Frontend can request backend-issued room tokens and connect to a real SFU.'
+                    : 'Frontend now uses the backend for meeting lifecycle. Add LiveKit credentials to enable real media transport.'}
+                </p>
+              </div>
+
               {recentMeetings.length ? (
                 recentMeetings.map((meeting) => (
                   <button
@@ -109,7 +132,7 @@ export function HomePage() {
                       <div>
                         <p className="text-lg font-medium text-white">{meeting.title}</p>
                         <p className="mt-2 text-sm text-slate-400">
-                          {meeting.participants.length} participants • code {meeting.code}
+                          {meeting.participants.length} participants | code {meeting.code}
                         </p>
                       </div>
                       <ArrowRight className="h-5 w-5 text-slate-400" />

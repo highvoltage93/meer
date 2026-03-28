@@ -18,10 +18,12 @@ export function MeetingCreateDialog() {
   const [title, setTitle] = useState('Design Review');
   const [hostName, setHostName] = useState('Alex Johnson');
   const createMeeting = useMeetingsStore((state) => state.createMeeting);
+  const isLoading = useMeetingsStore((state) => state.isLoading);
+  const error = useMeetingsStore((state) => state.error);
   const navigate = useNavigate();
 
-  function handleCreate() {
-    const meetingId = createMeeting(hostName, title);
+  async function handleCreate() {
+    const meetingId = await createMeeting(hostName, title);
     navigate(`/meeting/${meetingId}/prejoin`);
     setOpen(false);
   }
@@ -70,10 +72,11 @@ export function MeetingCreateDialog() {
         </div>
 
         <div className="mt-6 flex justify-end">
-          <Button variant="accent" onClick={handleCreate}>
+          <Button variant="accent" onClick={() => void handleCreate()} disabled={isLoading}>
             Continue to setup
           </Button>
         </div>
+        {error ? <p className="mt-4 text-sm text-rose-300">{error}</p> : null}
       </DialogContent>
     </Dialog>
   );
