@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Copy, Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { HeroShell } from '@/components/layout/hero-shell';
@@ -18,13 +18,15 @@ import { useMeetingsStore } from '@/store/meetings-store';
 export function PreJoinPage() {
   const { meetingId = '' } = useParams();
   const navigate = useNavigate();
+  const [isJoining, setIsJoining] = useState(false);
+  const [joinError, setJoinError] = useState<string | null>(null);
   const meeting = useMeetingsStore((state) => state.meetings[meetingId]);
   const fetchMeeting = useMeetingsStore((state) => state.fetchMeeting);
   const preferences = useMeetingsStore((state) => state.localPreferences);
   const updatePreferences = useMeetingsStore((state) => state.updateLocalPreferences);
   const setCurrentUserName = useMeetingsStore((state) => state.setCurrentUserName);
   const setCurrentParticipantId = useMeetingsStore((state) => state.setCurrentParticipantId);
-  const ensureGuestSession = useAuthStore((state) => state.ensureGuestSession);
+  const authUser = useAuthStore((state) => state.user);
   const meetingError = useMeetingsStore((state) => state.error);
   const isLoadingMeeting = useMeetingsStore((state) => state.isLoading);
   const joinRealtimeRoom = useCallSessionStore((state) => state.joinRoom);
@@ -41,9 +43,20 @@ export function PreJoinPage() {
   const joinUrl = useMemo(() => `${window.location.origin}/meeting/${meetingId}/prejoin`, [meetingId]);
 
   useEffect(() => {
+    if (!meetingId) {
+      navigate('/', { replace: true });
+      return;
+    }
+
     if (!meetingId || meeting) return;
     void fetchMeeting(meetingId);
-  }, [fetchMeeting, meeting, meetingId]);
+  }, [fetchMeeting, meeting, meetingId, navigate]);
+
+  useEffect(() => {
+    if (!authUser?.displayName) return;
+    if (preferences.name && preferences.name !== 'Guest User') return;
+    updatePreferences({ name: authUser.displayName });
+  }, [authUser?.displayName, preferences.name, updatePreferences]);
 
   if (!meeting && isLoadingMeeting) {
     return (
@@ -191,20 +204,30 @@ export function PreJoinPage() {
               <Button
                 variant="accent"
                 size="lg"
+                disabled={isJoining || !preferences.name.trim()}
                 onClick={async () => {
-                  await ensureGuestSession(preferences.name);
-                  const joinPayload = await meetingsApi.requestJoinToken(meetingId, preferences.name);
-                  setCurrentUserName(preferences.name);
-                  setCurrentParticipantId(joinPayload.participant.id);
-                  await fetchMeeting(meetingId);
-                  await joinRealtimeRoom(joinPayload.roomName, preferences.name, joinPayload.token ?? undefined, {
-                    micEnabled: preferences.isMicOn,
-                    cameraEnabled: preferences.isCameraOn,
-                  });
-                  navigate(`/meeting/${meetingId}`);
+                  try {
+                    setIsJoining(true);
+                    setJoinError(null);
+                    const joinPayload = await meetingsApi.requestJoinToken(meetingId, preferences.name);
+                    setCurrentUserName(preferences.name);
+                    setCurrentParticipantId(joinPayload.participant.id);
+                    await fetchMeeting(meetingId);
+                    navigate(`/meeting/${meetingId}`, { replace: true });
+                    void joinRealtimeRoom(joinPayload.roomName, preferences.name, joinPayload.token ?? undefined, {
+                      micEnabled: preferences.isMicOn,
+                      cameraEnabled: preferences.isCameraOn,
+                    });
+                  } catch (error) {
+                    setJoinError(
+                      error instanceof Error ? error.message : 'Unable to enter the room right now. Please try again.',
+                    );
+                  } finally {
+                    setIsJoining(false);
+                  }
                 }}
               >
-                Join now
+                {isJoining ? 'Joining...' : 'Join now'}
               </Button>
               <Button variant="outline" size="lg" asChild>
                 <Link to="/">Cancel</Link>
@@ -215,6 +238,7 @@ export function PreJoinPage() {
               <p className="font-medium text-white">Realtime status</p>
               <p className="mt-2">Connection layer: {realtimeState}</p>
               {realtimeError ? <p className="mt-2 text-amber-300">{realtimeError}</p> : null}
+              {joinError ? <p className="mt-2 text-rose-300">{joinError}</p> : null}
             </div>
           </CardContent>
         </Card>

@@ -8,15 +8,109 @@ const webhookSchema = z.object({
 });
 
 export const meetingRoutes: FastifyPluginAsync = async (app) => {
+  const getAuthToken = (request: { headers: Record<string, string | string[] | undefined> }) => {
+    const authorization = request.headers.authorization;
+    const authHeader = Array.isArray(authorization) ? authorization[0] : authorization;
+    const bearerToken = authHeader?.startsWith('Bearer ') ? authHeader.slice('Bearer '.length).trim() : undefined;
+    const sessionToken = request.headers['x-session-token'];
+    const legacyToken = Array.isArray(sessionToken) ? sessionToken[0] : sessionToken;
+    return bearerToken || legacyToken;
+  };
+
+  app.get('/ws/meetings/:meetingId', { websocket: true }, async (socket, request) => {
+    const { meetingId } = request.params as { meetingId: string };
+    const { sessionToken } = request.query as { sessionToken?: string };
+    const auth = await app.authService.getCurrentSession(sessionToken);
+
+    if (!auth) {
+      socket.send(
+        JSON.stringify({
+          type: 'error',
+          message: 'Session required',
+        }),
+      );
+      socket.close();
+      return;
+    }
+
+    const meeting = await app.meetingsService.getMeeting(meetingId);
+
+    if (!meeting) {
+      socket.send(
+        JSON.stringify({
+          type: 'error',
+          message: 'Meeting not found',
+        }),
+      );
+      socket.close();
+      return;
+    }
+
+    socket.send(
+      JSON.stringify({
+        type: 'meeting',
+        payload: meeting,
+      }),
+    );
+
+    const unsubscribe = app.meetingsService.subscribeToMeeting(meetingId, (snapshot) => {
+      socket.send(
+        JSON.stringify({
+          type: 'meeting',
+          payload: snapshot,
+        }),
+      );
+    });
+
+    socket.on('close', () => {
+      unsubscribe();
+    });
+  });
+
+  app.post('/auth/register', async (request, reply) => {
+    try {
+      const result = await app.authService.register(request.body);
+      return reply.code(201).send(result);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'USERNAME_TAKEN') {
+        throw app.httpErrors.conflict('Username is already taken');
+      }
+      throw error;
+    }
+  });
+
+  app.post('/auth/login', async (request, reply) => {
+    try {
+      const result = await app.authService.login(request.body);
+      return reply.send(result);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'INVALID_CREDENTIALS') {
+        throw app.httpErrors.unauthorized('Invalid username or password');
+      }
+      throw error;
+    }
+  });
+
   app.post('/auth/guest-session', async (request, reply) => {
-    const result = await app.authService.createGuestSession(request.body);
+    const result = await app.authService.createGuestSession(
+      request.body,
+      getAuthToken(request),
+    );
     return reply.code(201).send(result);
   });
 
+  app.get('/auth/me', async (request, reply) => {
+    const auth = await app.authService.getCurrentSession(getAuthToken(request));
+
+    if (!auth) {
+      throw app.httpErrors.unauthorized('Session required');
+    }
+
+    return reply.send(auth);
+  });
+
   app.post('/meetings', async (request, reply) => {
-    const auth = await app.authService.getUserFromSessionToken(
-      request.headers['x-session-token'] as string | undefined,
-    );
+    const auth = await app.authService.getUserFromSessionToken(getAuthToken(request));
 
     if (!auth) {
       throw app.httpErrors.unauthorized('Session required');
@@ -51,9 +145,33 @@ export const meetingRoutes: FastifyPluginAsync = async (app) => {
     return reply.send(meeting);
   });
 
+  app.get('/meetings/mine', async (request, reply) => {
+    const auth = await app.authService.getCurrentSession(getAuthToken(request));
+
+    if (!auth) {
+      throw app.httpErrors.unauthorized('Session required');
+    }
+
+    const meetings = await app.meetingsService.listMeetingsByHostUserId(auth.user.id);
+    return reply.send(meetings);
+  });
+
   app.post('/meetings/:meetingId/join-token', async (request, reply) => {
     const { meetingId } = request.params as { meetingId: string };
-    const result = await app.meetingsService.createJoinToken(meetingId, request.body);
+    const auth = await app.authService.getCurrentSession(getAuthToken(request));
+
+    if (!auth) {
+      throw app.httpErrors.unauthorized('Session required');
+    }
+
+    const result = await app.meetingsService.createJoinToken(
+      meetingId,
+      request.body,
+      {
+        userId: auth.user.id,
+        displayName: auth.user.displayName,
+      },
+    );
 
     if (!result) {
       throw app.httpErrors.notFound('Meeting not found');
@@ -64,10 +182,16 @@ export const meetingRoutes: FastifyPluginAsync = async (app) => {
 
   app.post('/meetings/:meetingId/chat', async (request, reply) => {
     const { meetingId } = request.params as { meetingId: string };
-    const auth = await app.authService.getUserFromSessionToken(
-      request.headers['x-session-token'] as string | undefined,
-    );
-    const message = await app.meetingsService.createMessage(meetingId, request.body, auth?.user.id);
+    const auth = await app.authService.getUserFromSessionToken(getAuthToken(request));
+
+    if (!auth) {
+      throw app.httpErrors.unauthorized('Session required');
+    }
+
+    const message = await app.meetingsService.createMessage(meetingId, request.body, {
+      userId: auth.user.id,
+      displayName: auth.user.displayName,
+    });
 
     if (!message) {
       throw app.httpErrors.notFound('Meeting not found');
@@ -78,7 +202,27 @@ export const meetingRoutes: FastifyPluginAsync = async (app) => {
 
   app.patch('/meetings/:meetingId/participants/:participantId/state', async (request, reply) => {
     const { meetingId, participantId } = request.params as { meetingId: string; participantId: string };
-    const participant = await app.meetingsService.updateParticipantState(meetingId, participantId, request.body);
+    const auth = await app.authService.getCurrentSession(getAuthToken(request));
+
+    if (!auth) {
+      throw app.httpErrors.unauthorized('Session required');
+    }
+
+    let participant;
+
+    try {
+      participant = await app.meetingsService.updateParticipantState(
+        meetingId,
+        participantId,
+        request.body,
+        auth.user.id,
+      );
+    } catch (error) {
+      if (error instanceof Error && error.message === 'FORBIDDEN') {
+        throw app.httpErrors.forbidden('Not allowed to update this participant');
+      }
+      throw error;
+    }
 
     if (!participant) {
       throw app.httpErrors.notFound('Participant not found');
@@ -87,9 +231,50 @@ export const meetingRoutes: FastifyPluginAsync = async (app) => {
     return reply.send(participant);
   });
 
+  app.patch('/meetings/:meetingId/pin', async (request, reply) => {
+    const { meetingId } = request.params as { meetingId: string };
+    const auth = await app.authService.getCurrentSession(getAuthToken(request));
+
+    if (!auth) {
+      throw app.httpErrors.unauthorized('Session required');
+    }
+
+    let meeting;
+
+    try {
+      meeting = await app.meetingsService.updateMeetingPin(meetingId, request.body, auth.user.id);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'FORBIDDEN') {
+        throw app.httpErrors.forbidden('Only the host can pin participants');
+      }
+      throw error;
+    }
+
+    if (!meeting) {
+      throw app.httpErrors.notFound('Meeting not found');
+    }
+
+    return reply.send(meeting);
+  });
+
   app.delete('/meetings/:meetingId/participants/:participantId', async (request, reply) => {
     const { meetingId, participantId } = request.params as { meetingId: string; participantId: string };
-    const removed = await app.meetingsService.removeParticipant(meetingId, participantId);
+    const auth = await app.authService.getCurrentSession(getAuthToken(request));
+
+    if (!auth) {
+      throw app.httpErrors.unauthorized('Session required');
+    }
+
+    let removed;
+
+    try {
+      removed = await app.meetingsService.removeParticipantAsUser(meetingId, participantId, auth.user.id);
+    } catch (error) {
+      if (error instanceof Error && error.message === 'FORBIDDEN') {
+        throw app.httpErrors.forbidden('Not allowed to remove this participant');
+      }
+      throw error;
+    }
 
     if (!removed) {
       throw app.httpErrors.notFound('Meeting not found');

@@ -1,4 +1,36 @@
 services:
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_RTC_PROVIDER: livekit
+      VITE_LIVEKIT_URL: ws://127.0.0.1:7880
+      VITE_API_BASE_URL: http://127.0.0.1:8787/api
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    ports:
+      - "8787:8787"
+    environment:
+      HOST: 0.0.0.0
+      PORT: 8787
+      CLIENT_ORIGIN: http://127.0.0.1:5173
+      DATABASE_URL: postgres://meetingo:meetingo@postgres:5432/meetingo
+      JWT_SECRET: local-docker-jwt-secret-change-me
+      LIVEKIT_URL: http://livekit:7880
+      LIVEKIT_API_KEY: devkey
+      LIVEKIT_API_SECRET: secret
+    depends_on:
+      - postgres
+      - livekit
+
   postgres:
     image: postgres:16
     environment:

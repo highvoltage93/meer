@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   Copy,
@@ -13,6 +13,7 @@ import {
   Video,
   VideoOff,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { HeroShell } from '@/components/layout/hero-shell';
 import { MitingoLogo } from '@/components/brand/mitingo-logo';
 import { MediaPreview } from '@/components/meeting/media-preview';
@@ -26,31 +27,49 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useLocalMedia } from '@/hooks/use-local-media';
 import { useMediaDevices } from '@/hooks/use-media-devices';
 import { meetingsApi } from '@/services/api/meetings-api';
+import { useAuthStore } from '@/store/auth-store';
 import { useCallSessionStore } from '@/store/call-session-store';
 import { useMeetingsStore } from '@/store/meetings-store';
+import { useNotificationsStore } from '@/store/notifications-store';
 import type { Participant } from '@/types/meeting';
 
 export function MeetingRoomPage() {
   const { meetingId = '' } = useParams();
   const navigate = useNavigate();
   const [chatDraft, setChatDraft] = useState('');
-  const [pinnedParticipantId, setPinnedParticipantId] = useState<string | null>(null);
-  const [roomToasts, setRoomToasts] = useState<Array<{ id: string; text: string }>>([]);
+  const chatScrollRef = useRef<HTMLDivElement | null>(null);
+  const [roomSyncState, setRoomSyncState] = useState<'connecting' | 'connected' | 'reconnecting' | 'offline'>(
+    'connecting',
+  );
+  const [isRecoveringRoom, setIsRecoveringRoom] = useState(false);
+  const [isUpdatingMic, setIsUpdatingMic] = useState(false);
+  const [isUpdatingCamera, setIsUpdatingCamera] = useState(false);
+  const [isUpdatingScreenShare, setIsUpdatingScreenShare] = useState(false);
+  const [isUpdatingHand, setIsUpdatingHand] = useState(false);
+  const [isSendingChat, setIsSendingChat] = useState(false);
+  const [isUpdatingPin, setIsUpdatingPin] = useState(false);
+  const [isSwitchingMicDevice, setIsSwitchingMicDevice] = useState(false);
+  const [isSwitchingCameraDevice, setIsSwitchingCameraDevice] = useState(false);
   const meeting = useMeetingsStore((state) => state.meetings[meetingId]);
   const fetchMeeting = useMeetingsStore((state) => state.fetchMeeting);
   const currentUserName = useMeetingsStore((state) => state.currentUserName);
   const currentParticipantId = useMeetingsStore((state) => state.currentParticipantId);
+  const setCurrentUserName = useMeetingsStore((state) => state.setCurrentUserName);
+  const setCurrentParticipantId = useMeetingsStore((state) => state.setCurrentParticipantId);
   const preferences = useMeetingsStore((state) => state.localPreferences);
   const updateLocalPreferences = useMeetingsStore((state) => state.updateLocalPreferences);
-  const toggleParticipantMedia = useMeetingsStore((state) => state.toggleParticipantMedia);
-  const addChatMessage = useMeetingsStore((state) => state.addChatMessage);
   const syncMeeting = useMeetingsStore((state) => state.syncMeeting);
   const realtimeState = useCallSessionStore((state) => state.connectionState);
   const realtimeParticipants = useCallSessionStore((state) => state.participants);
+  const joinRealtimeRoom = useCallSessionStore((state) => state.joinRoom);
   const leaveRealtimeRoom = useCallSessionStore((state) => state.leaveRoom);
   const toggleMicrophone = useCallSessionStore((state) => state.toggleMicrophone);
   const toggleCamera = useCallSessionStore((state) => state.toggleCamera);
   const toggleScreenShare = useCallSessionStore((state) => state.toggleScreenShare);
+  const switchMicrophoneDevice = useCallSessionStore((state) => state.switchMicrophoneDevice);
+  const switchCameraDevice = useCallSessionStore((state) => state.switchCameraDevice);
+  const authUser = useAuthStore((state) => state.user);
+  const addNotification = useNotificationsStore((state) => state.addNotification);
   const { audioInputs, videoInputs } = useMediaDevices();
   const { stream } = useLocalMedia({
     video: preferences.isCameraOn,
@@ -60,52 +79,76 @@ export function MeetingRoomPage() {
   });
 
   useEffect(() => {
+    if (!meetingId) {
+      navigate('/', { replace: true });
+      return;
+    }
+
     if (!meetingId) return;
     void fetchMeeting(meetingId);
-    let previousParticipantIds = new Set<string>();
+    let previousParticipants = new Map<string, string>();
+    let hasOpenedSocket = false;
     const source = meetingsApi.subscribeToMeeting(meetingId, (nextMeeting) => {
       const nextIds = new Set(nextMeeting.participants.map((participant) => participant.id));
-      const joined = nextMeeting.participants.filter((participant) => !previousParticipantIds.has(participant.id));
-      const left = Array.from(previousParticipantIds).filter((id) => !nextIds.has(id));
+      const joined = nextMeeting.participants.filter((participant) => !previousParticipants.has(participant.id));
+      const left = Array.from(previousParticipants.entries()).filter(([id]) => !nextIds.has(id));
 
-      if (previousParticipantIds.size) {
+      if (previousParticipants.size) {
         if (joined.length) {
-          setRoomToasts((state) => [
-            ...state,
-            ...joined.map((participant) => ({
-              id: crypto.randomUUID(),
-              text: `${participant.name} joined the room`,
-            })),
-          ]);
+          joined.forEach((participant) => {
+            addNotification({
+              title: 'Participant joined',
+              message: `${participant.name} joined the room.`,
+              variant: 'success',
+            });
+          });
         }
 
         if (left.length) {
-          setRoomToasts((state) => [
-            ...state,
-            ...left.map((id) => ({
-              id: crypto.randomUUID(),
-              text: `A participant left the room`,
-            })),
-          ]);
+          left.forEach(([, name]) => {
+            addNotification({
+              title: 'Participant left',
+              message: `${name} left the room.`,
+              variant: 'info',
+            });
+          });
         }
       }
 
-      previousParticipantIds = nextIds;
+      previousParticipants = new Map(nextMeeting.participants.map((participant) => [participant.id, participant.name]));
       syncMeeting(nextMeeting);
+    }, {
+      onOpen: () => {
+        setRoomSyncState('connected');
+        if (hasOpenedSocket) {
+          addNotification({
+            title: 'Room sync restored',
+            message: 'Messages and participant state are live again.',
+            variant: 'success',
+          });
+        }
+        hasOpenedSocket = true;
+      },
+      onClose: () => {
+        setRoomSyncState('offline');
+      },
+      onError: () => {
+        setRoomSyncState('offline');
+        addNotification({
+          title: 'Room sync issue',
+          message: 'Trying to reconnect to the meeting socket.',
+          variant: 'warning',
+        });
+      },
+      onReconnectScheduled: () => {
+        setRoomSyncState('reconnecting');
+      },
     });
 
     return () => {
       source.close();
     };
-  }, [fetchMeeting, meetingId, syncMeeting]);
-
-  useEffect(() => {
-    if (!roomToasts.length) return;
-    const timer = window.setTimeout(() => {
-      setRoomToasts((state) => state.slice(1));
-    }, 2200);
-    return () => window.clearTimeout(timer);
-  }, [roomToasts]);
+  }, [addNotification, fetchMeeting, meetingId, navigate, syncMeeting]);
 
   const mergedParticipants = useMemo(() => {
     if (!meeting) return [] as Array<Participant & { realtimeKey: string; hasRealtime: boolean }>;
@@ -150,29 +193,100 @@ export function MeetingRoomPage() {
     }
 
     return Array.from(byId.values()).sort((a, b) => {
-      if (a.name === currentUserName) return -1;
-      if (b.name === currentUserName) return 1;
+      if (a.id === currentParticipantId) return -1;
+      if (b.id === currentParticipantId) return 1;
+      if (a.userId && a.userId === authUser?.id) return -1;
+      if (b.userId && b.userId === authUser?.id) return 1;
       if (a.isScreenSharing && !b.isScreenSharing) return -1;
       if (!a.isScreenSharing && b.isScreenSharing) return 1;
       return a.name.localeCompare(b.name);
     });
-  }, [currentUserName, meeting, realtimeParticipants]);
+  }, [authUser?.id, currentParticipantId, meeting, realtimeParticipants]);
 
   const localRealtimeParticipant = realtimeParticipants.find((participant) => participant.isLocal);
   const currentParticipant =
     mergedParticipants.find((participant) => participant.id === currentParticipantId) ??
     mergedParticipants.find((participant) => participant.id === localRealtimeParticipant?.id) ??
+    mergedParticipants.find((participant) => participant.userId === authUser?.id) ??
     mergedParticipants.find((participant) => participant.name === currentUserName);
+
+  useEffect(() => {
+    if (!meetingId || !meeting || currentParticipant || isRecoveringRoom) return;
+
+    const recoveryName =
+      preferences.name?.trim() && preferences.name !== 'Guest User'
+        ? preferences.name.trim()
+        : authUser?.displayName?.trim();
+
+    if (!recoveryName) {
+      navigate(`/meeting/${meetingId}/prejoin`, { replace: true });
+      return;
+    }
+
+    let cancelled = false;
+
+    async function recoverRoom() {
+      const participantName = recoveryName;
+      if (!participantName) {
+        navigate(`/meeting/${meetingId}/prejoin`, { replace: true });
+        return;
+      }
+
+        try {
+          setIsRecoveringRoom(true);
+          const joinPayload = await meetingsApi.requestJoinToken(meetingId, participantName);
+        setCurrentUserName(participantName);
+        setCurrentParticipantId(joinPayload.participant.id);
+        await fetchMeeting(meetingId);
+        await joinRealtimeRoom(joinPayload.roomName, participantName, joinPayload.token ?? undefined, {
+          micEnabled: preferences.isMicOn,
+          cameraEnabled: preferences.isCameraOn,
+        });
+      } catch {
+        if (!cancelled) {
+          navigate(`/meeting/${meetingId}/prejoin`, { replace: true });
+        }
+      } finally {
+        if (!cancelled) {
+          setIsRecoveringRoom(false);
+        }
+      }
+    }
+
+    void recoverRoom();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    authUser?.displayName,
+    currentParticipant,
+    fetchMeeting,
+    isRecoveringRoom,
+    joinRealtimeRoom,
+    meeting,
+    meetingId,
+    navigate,
+    preferences.isCameraOn,
+    preferences.isMicOn,
+    preferences.name,
+    setCurrentParticipantId,
+    setCurrentUserName,
+  ]);
 
   if (!meeting || !currentParticipant) {
     return (
       <HeroShell className="items-center justify-center">
         <Card className="max-w-lg">
           <CardContent className="space-y-4">
-            <h1 className="text-3xl font-semibold">You are not in this meeting</h1>
-            <p className="text-slate-400">Open the pre-join screen first and enter the room from there.</p>
+            <h1 className="text-3xl font-semibold">{isRecoveringRoom ? 'Restoring your room' : 'Redirecting to setup'}</h1>
+            <p className="text-slate-400">
+              {isRecoveringRoom
+                ? 'We are restoring your participant session after refresh or a direct invite link.'
+                : 'We are taking you to the pre-join screen so the room state can initialize correctly.'}
+            </p>
             <Button asChild>
-              <Link to="/">Back home</Link>
+              <Link to={`/meeting/${meetingId}/prejoin`}>Open pre-join</Link>
             </Button>
           </CardContent>
         </Card>
@@ -181,7 +295,12 @@ export function MeetingRoomPage() {
   }
 
   const roomParticipant = currentParticipant;
+  const roomParticipantIsHost = roomParticipant.role === 'host';
+  const micEnabled = localRealtimeParticipant?.isMicOn ?? roomParticipant.isMicOn;
+  const cameraEnabled = localRealtimeParticipant?.isCameraOn ?? roomParticipant.isCameraOn;
+  const screenShareEnabled = localRealtimeParticipant?.isScreenSharing ?? roomParticipant.isScreenSharing;
   const inviteUrl = `${window.location.origin}/meeting/${meetingId}/prejoin`;
+  const pinnedParticipantId = meeting.pinnedParticipantId ?? null;
   const activeSpeaker = realtimeParticipants
     .filter((participant) => participant.isSpeaking)
     .sort((a, b) => (b.audioLevel ?? 0) - (a.audioLevel ?? 0))[0];
@@ -191,40 +310,135 @@ export function MeetingRoomPage() {
     mergedParticipants.find((participant) => participant.id === activeSpeaker?.id) ??
     roomParticipant;
   const secondaryParticipants = mergedParticipants.filter((participant) => participant.id !== primaryParticipant.id);
+  const chatEntries = meeting.activity.filter((entry) => entry.type === 'chat');
+
+  useEffect(() => {
+    chatScrollRef.current?.scrollTo({
+      top: chatScrollRef.current.scrollHeight,
+      behavior: 'smooth',
+    });
+  }, [meeting.activity.length]);
+
+  function pushToast(text: string) {
+    addNotification({
+      title: 'Meeting update',
+      message: text,
+      variant: 'warning',
+    });
+  }
 
   async function handleToggleMicrophone() {
-    const next = !(localRealtimeParticipant?.isMicOn ?? roomParticipant.isMicOn);
-    toggleParticipantMedia(meetingId, roomParticipant.id, 'isMicOn');
-    updateLocalPreferences({ isMicOn: next });
-    await meetingsApi.updateParticipantState(meetingId, roomParticipant.id, { isMicOn: next });
-    await toggleMicrophone(next);
+    const next = !micEnabled;
+    setIsUpdatingMic(true);
+    try {
+      await toggleMicrophone(next);
+      updateLocalPreferences({ isMicOn: next });
+      await meetingsApi.updateParticipantState(meetingId, roomParticipant.id, { isMicOn: next });
+    } catch {
+      await toggleMicrophone(!next);
+      updateLocalPreferences({ isMicOn: !next });
+      pushToast('Unable to update microphone state right now.');
+    } finally {
+      setIsUpdatingMic(false);
+    }
   }
 
   async function handleToggleCamera() {
-    const next = !(localRealtimeParticipant?.isCameraOn ?? roomParticipant.isCameraOn);
-    toggleParticipantMedia(meetingId, roomParticipant.id, 'isCameraOn');
-    updateLocalPreferences({ isCameraOn: next });
-    await meetingsApi.updateParticipantState(meetingId, roomParticipant.id, { isCameraOn: next });
-    await toggleCamera(next);
+    const next = !cameraEnabled;
+    setIsUpdatingCamera(true);
+    try {
+      await toggleCamera(next);
+      updateLocalPreferences({ isCameraOn: next });
+      await meetingsApi.updateParticipantState(meetingId, roomParticipant.id, { isCameraOn: next });
+    } catch {
+      await toggleCamera(!next);
+      updateLocalPreferences({ isCameraOn: !next });
+      pushToast('Unable to update camera state right now.');
+    } finally {
+      setIsUpdatingCamera(false);
+    }
   }
 
   async function handleToggleScreenShare() {
-    const next = !(localRealtimeParticipant?.isScreenSharing ?? roomParticipant.isScreenSharing);
-    toggleParticipantMedia(meetingId, roomParticipant.id, 'isScreenSharing');
-    await meetingsApi.updateParticipantState(meetingId, roomParticipant.id, { isScreenSharing: next });
-    await toggleScreenShare(next);
+    const next = !screenShareEnabled;
+    setIsUpdatingScreenShare(true);
+    try {
+      await toggleScreenShare(next);
+      await meetingsApi.updateParticipantState(meetingId, roomParticipant.id, { isScreenSharing: next });
+    } catch {
+      await toggleScreenShare(!next);
+      pushToast('Screen share could not be updated.');
+    } finally {
+      setIsUpdatingScreenShare(false);
+    }
   }
 
   async function handleToggleHandRaise() {
     const next = !roomParticipant.isHandRaised;
-    await meetingsApi.updateParticipantState(meetingId, roomParticipant.id, { isHandRaised: next });
+    setIsUpdatingHand(true);
+    try {
+      await meetingsApi.updateParticipantState(meetingId, roomParticipant.id, { isHandRaised: next });
+    } catch {
+      pushToast('Unable to update raised hand status.');
+    } finally {
+      setIsUpdatingHand(false);
+    }
   }
 
   async function handleSendChat() {
     if (!chatDraft.trim()) return;
-    const message = chatDraft;
+    const message = chatDraft.trim();
     setChatDraft('');
-    await addChatMessage(meetingId, roomParticipant.name, message);
+    setIsSendingChat(true);
+    try {
+      await meetingsApi.sendMessage(meetingId, roomParticipant.name, message);
+    } catch {
+      setChatDraft(message);
+      pushToast('Message was not sent. Please try again.');
+    } finally {
+      setIsSendingChat(false);
+    }
+  }
+
+  async function handleTogglePin(participantId: string) {
+    if (!roomParticipantIsHost) return;
+    const nextPinnedId = pinnedParticipantId === participantId ? null : participantId;
+    setIsUpdatingPin(true);
+    try {
+      await meetingsApi.updateMeetingPin(meetingId, nextPinnedId);
+    } catch {
+      pushToast('Unable to update shared pin right now.');
+    } finally {
+      setIsUpdatingPin(false);
+    }
+  }
+
+  async function handleSwitchMicrophoneDevice(deviceId?: string) {
+    updateLocalPreferences({ selectedMicrophoneId: deviceId });
+    if (!meetingId || realtimeState === 'idle' || realtimeState === 'disconnected') return;
+
+    setIsSwitchingMicDevice(true);
+    try {
+      await switchMicrophoneDevice(deviceId);
+    } catch {
+      pushToast('Microphone switch failed.');
+    } finally {
+      setIsSwitchingMicDevice(false);
+    }
+  }
+
+  async function handleSwitchCameraDevice(deviceId?: string) {
+    updateLocalPreferences({ selectedCameraId: deviceId });
+    if (!meetingId || realtimeState === 'idle' || realtimeState === 'disconnected') return;
+
+    setIsSwitchingCameraDevice(true);
+    try {
+      await switchCameraDevice(deviceId);
+    } catch {
+      pushToast('Camera switch failed.');
+    } finally {
+      setIsSwitchingCameraDevice(false);
+    }
   }
 
   return (
@@ -243,6 +457,7 @@ export function MeetingRoomPage() {
           <Badge variant="success">{mergedParticipants.length} participants</Badge>
           <Badge>{meeting.code}</Badge>
           <Badge>{realtimeState}</Badge>
+          <Badge variant={roomSyncState === 'connected' ? 'success' : 'default'}>socket {roomSyncState}</Badge>
           <Button
             variant="outline"
             onClick={async () => {
@@ -263,16 +478,6 @@ export function MeetingRoomPage() {
         </div>
       ) : null}
 
-      {roomToasts.length ? (
-        <div className="pointer-events-none fixed right-6 top-6 z-50 flex max-w-sm flex-col gap-3">
-          {roomToasts.map((toast) => (
-            <div key={toast.id} className="rounded-2xl border border-white/10 bg-slate-950/90 px-4 py-3 text-sm text-white shadow-2xl">
-              {toast.text}
-            </div>
-          ))}
-        </div>
-      ) : null}
-
       <section className="grid flex-1 gap-6 xl:grid-cols-[1.5fr_0.95fr]">
         <div className="space-y-6">
           <Card className="overflow-hidden">
@@ -286,8 +491,8 @@ export function MeetingRoomPage() {
                   {primaryParticipant.isScreenSharing ? <Badge variant="accent">Screen share</Badge> : null}
                   {primaryParticipant.id === activeSpeaker?.id ? <Badge variant="success">Speaking</Badge> : null}
                   {primaryParticipant.isHandRaised ? <Badge>Hand raised</Badge> : null}
-                  {pinnedParticipantId ? (
-                    <Button variant="outline" size="sm" onClick={() => setPinnedParticipantId(null)}>
+                  {pinnedParticipantId && roomParticipantIsHost ? (
+                    <Button variant="outline" size="sm" onClick={() => void handleTogglePin(primaryParticipant.id)}>
                       Clear pin
                     </Button>
                   ) : null}
@@ -328,13 +533,11 @@ export function MeetingRoomPage() {
               return (
                 <ParticipantTile
                   key={participant.realtimeKey}
-                  participant={participant}
-                  isActive={participant.id === roomParticipant.id}
-                  isPinned={participant.id === pinnedParticipantId}
-                  onClick={() =>
-                    setPinnedParticipantId((current) => (current === participant.id ? null : participant.id))
-                  }
-                  videoElement={
+                    participant={participant}
+                    isActive={participant.id === roomParticipant.id}
+                    isPinned={participant.id === pinnedParticipantId}
+                    onClick={roomParticipantIsHost ? () => void handleTogglePin(participant.id) : undefined}
+                    videoElement={
                     track ? (
                       <RealtimeVideoTile track={track} muted={realtime?.isLocal} />
                     ) : participant.id === roomParticipant.id ? (
@@ -354,22 +557,25 @@ export function MeetingRoomPage() {
             <CardContent className="flex flex-wrap items-center justify-between gap-4 p-4">
               <div className="flex flex-wrap items-center gap-3">
                 <Button
-                  variant={roomParticipant.isMicOn ? 'secondary' : 'destructive'}
+                  variant={micEnabled ? 'secondary' : 'destructive'}
                   size="icon"
+                  disabled={isUpdatingMic}
                   onClick={() => void handleToggleMicrophone()}
                 >
-                  {roomParticipant.isMicOn ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
+                  {micEnabled ? <Mic className="h-4 w-4" /> : <MicOff className="h-4 w-4" />}
                 </Button>
                 <Button
-                  variant={roomParticipant.isCameraOn ? 'secondary' : 'destructive'}
+                  variant={cameraEnabled ? 'secondary' : 'destructive'}
                   size="icon"
+                  disabled={isUpdatingCamera}
                   onClick={() => void handleToggleCamera()}
                 >
-                  {roomParticipant.isCameraOn ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
+                  {cameraEnabled ? <Video className="h-4 w-4" /> : <VideoOff className="h-4 w-4" />}
                 </Button>
                 <Button
-                  variant={roomParticipant.isScreenSharing ? 'accent' : 'outline'}
+                  variant={screenShareEnabled ? 'accent' : 'outline'}
                   size="icon"
+                  disabled={isUpdatingScreenShare}
                   onClick={() => void handleToggleScreenShare()}
                 >
                   <MonitorUp className="h-4 w-4" />
@@ -377,6 +583,7 @@ export function MeetingRoomPage() {
                 <Button
                   variant={roomParticipant.isHandRaised ? 'accent' : 'outline'}
                   size="icon"
+                  disabled={isUpdatingHand}
                   onClick={() => void handleToggleHandRaise()}
                 >
                   <Hand className="h-4 w-4" />
@@ -385,9 +592,8 @@ export function MeetingRoomPage() {
                 <select
                   className="h-11 rounded-full border border-white/12 bg-black/20 px-4 text-sm text-white"
                   value={preferences.selectedMicrophoneId ?? ''}
-                  onChange={(event) =>
-                    updateLocalPreferences({ selectedMicrophoneId: event.target.value || undefined })
-                  }
+                  disabled={isSwitchingMicDevice}
+                  onChange={(event) => void handleSwitchMicrophoneDevice(event.target.value || undefined)}
                 >
                   <option value="">Default mic</option>
                   {audioInputs.map((device) => (
@@ -400,9 +606,8 @@ export function MeetingRoomPage() {
                 <select
                   className="h-11 rounded-full border border-white/12 bg-black/20 px-4 text-sm text-white"
                   value={preferences.selectedCameraId ?? ''}
-                  onChange={(event) =>
-                    updateLocalPreferences({ selectedCameraId: event.target.value || undefined })
-                  }
+                  disabled={isSwitchingCameraDevice}
+                  onChange={(event) => void handleSwitchCameraDevice(event.target.value || undefined)}
                 >
                   <option value="">Default cam</option>
                   {videoInputs.map((device) => (
@@ -422,14 +627,15 @@ export function MeetingRoomPage() {
                 <Button
                   variant="destructive"
                   onClick={async () => {
-                  await leaveRealtimeRoom();
-                  await meetingsApi.leaveParticipant(meetingId, roomParticipant.id);
-                  const refreshed = await fetchMeeting(meetingId);
-                  if (refreshed) {
-                    syncMeeting(refreshed);
-                  }
-                  navigate('/');
-                }}
+                    navigate('/', { replace: true });
+                    setCurrentParticipantId(undefined);
+                    try {
+                      await leaveRealtimeRoom();
+                      await meetingsApi.leaveParticipant(meetingId, roomParticipant.id);
+                    } catch {
+                      // Navigation should not be blocked by realtime or cleanup failures.
+                    }
+                  }}
                 >
                   <PhoneOff className="h-4 w-4" />
                   Leave call
@@ -454,40 +660,101 @@ export function MeetingRoomPage() {
               </TabsList>
 
               <TabsContent value="chat" className="flex h-full flex-col">
-                <div className="mt-5 flex-1 space-y-3 overflow-y-auto pr-1">
-                  {meeting.activity.map((entry) => (
-                    <div key={entry.id} className="rounded-[22px] border border-white/8 bg-black/20 p-4">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-sm font-medium text-white">
-                          {entry.type === 'chat' ? entry.author : 'System'}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {new Date(entry.timestamp).toLocaleTimeString([], {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                <div
+                  ref={chatScrollRef}
+                  className="mt-5 min-h-[26rem] flex-1 space-y-4 overflow-y-auto rounded-[24px] border border-white/8 bg-black/16 p-4 pr-2"
+                >
+                  {chatEntries.length ? (
+                    <AnimatePresence initial={false}>
+                      {meeting.activity.map((entry) => {
+                        const isMine = entry.type === 'chat' && entry.author === roomParticipant.name;
+                        const time = new Date(entry.timestamp).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        });
+
+                        if (entry.type === 'system') {
+                          return (
+                            <motion.div
+                              key={entry.id}
+                              initial={{ opacity: 0, y: 6 }}
+                              animate={{ opacity: 1, y: 0 }}
+                              exit={{ opacity: 0, y: -6 }}
+                              className="flex justify-center"
+                            >
+                              <span className="rounded-full border border-white/8 bg-white/8 px-3 py-1 text-[11px] font-medium uppercase tracking-[0.12em] text-slate-400">
+                                {entry.text}
+                              </span>
+                            </motion.div>
+                          );
+                        }
+
+                        return (
+                          <motion.div
+                            key={entry.id}
+                            layout
+                            initial={{ opacity: 0, y: 10, scale: 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: -8 }}
+                            transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                            className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
+                          >
+                            <div className={`max-w-[82%] ${isMine ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
+                              <div className={`flex items-center gap-2 px-1 ${isMine ? 'flex-row-reverse' : ''}`}>
+                                <p className="text-xs font-medium text-slate-300">{isMine ? 'You' : entry.author}</p>
+                                <span className="text-[11px] text-slate-500">{time}</span>
+                              </div>
+                              <div
+                                className={`rounded-[20px] px-4 py-3 text-sm leading-6 shadow-lg ${
+                                  isMine
+                                    ? 'rounded-br-md bg-cyan-300 text-slate-950'
+                                    : 'rounded-bl-md border border-white/8 bg-white/10 text-slate-100'
+                                }`}
+                              >
+                                {entry.text}
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </AnimatePresence>
+                  ) : (
+                    <div className="grid h-full min-h-[20rem] place-items-center text-center">
+                      <div>
+                        <div className="mx-auto grid h-12 w-12 place-items-center rounded-2xl border border-cyan-300/20 bg-cyan-300/10 text-cyan-100">
+                          <MessageSquare className="h-5 w-5" />
+                        </div>
+                        <p className="mt-4 text-sm font-medium text-white">No messages yet</p>
+                        <p className="mt-2 max-w-56 text-sm leading-6 text-slate-400">
+                          Start the room chat. Messages are saved and synced through the backend.
                         </p>
                       </div>
-                      <p className="mt-2 text-sm leading-6 text-slate-300">{entry.text}</p>
                     </div>
-                  ))}
+                  )}
                 </div>
 
-                <div className="mt-4 flex gap-3">
+                <form
+                  className="mt-4 flex items-end gap-3 rounded-[24px] border border-white/8 bg-black/18 p-3"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleSendChat();
+                  }}
+                >
                   <Input
+                    className="min-h-12 rounded-[18px] border-0 bg-transparent px-3"
                     placeholder="Send a message"
                     value={chatDraft}
                     onChange={(event) => setChatDraft(event.target.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter') {
-                        void handleSendChat();
-                      }
-                    }}
                   />
-                  <Button variant="accent" size="icon" onClick={() => void handleSendChat()}>
+                  <Button
+                    type="submit"
+                    variant="accent"
+                    size="icon"
+                    disabled={isSendingChat || !chatDraft.trim()}
+                  >
                     <SendHorizonal className="h-4 w-4" />
                   </Button>
-                </div>
+                </form>
               </TabsContent>
 
               <TabsContent value="people" className="mt-5 space-y-3">
@@ -511,7 +778,9 @@ export function MeetingRoomPage() {
                       {participant.id === activeSpeaker?.id ? <Badge variant="success">Speaking</Badge> : null}
                       {participant.isScreenSharing ? <Badge variant="accent">Sharing</Badge> : null}
                       {participant.isHandRaised ? <Badge>Hand raised</Badge> : null}
-                      {participant.name === currentUserName ? <Badge variant="accent">You</Badge> : null}
+                      {participant.id === roomParticipant.id || participant.userId === authUser?.id ? (
+                        <Badge variant="accent">You</Badge>
+                      ) : null}
                       {participant.hasRealtime ? <Badge variant="success">Live</Badge> : null}
                       {(() => {
                         const realtime = realtimeParticipants.find((item) => item.id === participant.id);

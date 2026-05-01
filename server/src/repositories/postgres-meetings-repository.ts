@@ -24,6 +24,7 @@ function mapMeeting(row: Record<string, unknown>): MeetingRecord {
     title: String(row.title),
     hostUserId: String(row.host_user_id),
     hostName: String(row.host_name),
+    pinnedParticipantId: row.pinned_participant_id ? String(row.pinned_participant_id) : undefined,
     status: row.status as 'active' | 'ended',
     createdAt: new Date(String(row.created_at)).toISOString(),
   };
@@ -33,6 +34,7 @@ function mapParticipant(row: Record<string, unknown>): MeetingParticipantRecord 
   return {
     id: String(row.id),
     meetingId: String(row.meeting_id),
+    userId: row.user_id ? String(row.user_id) : undefined,
     name: String(row.name),
     role: row.role as MeetingRole,
     joinedAt: new Date(String(row.joined_at)).toISOString(),
@@ -54,35 +56,85 @@ function mapMessage(row: Record<string, unknown>): MeetingMessageRecord {
   };
 }
 
+function mapUser(row: Record<string, unknown>): UserRecord {
+  return {
+    id: String(row.id),
+    username: row.username ? String(row.username) : undefined,
+    passwordHash: row.password_hash ? String(row.password_hash) : undefined,
+    firstName: row.first_name ? String(row.first_name) : undefined,
+    lastName: row.last_name ? String(row.last_name) : undefined,
+    authProvider: (row.auth_provider as UserRecord['authProvider']) ?? 'guest',
+    displayName: String(row.display_name),
+    createdAt: new Date(String(row.created_at)).toISOString(),
+  };
+}
+
 export class PostgresMeetingsRepository implements MeetingsRepository {
   constructor(private readonly db: PostgresDatabase) {}
 
-  async createUser(input: { displayName: string }): Promise<UserRecord> {
+  async createUser(input: {
+    displayName: string;
+    username?: string;
+    passwordHash?: string;
+    firstName?: string;
+    lastName?: string;
+    authProvider?: UserRecord['authProvider'];
+  }): Promise<UserRecord> {
     const id = randomUUID();
     const result = await this.db.pool.query(
-      `INSERT INTO users (id, display_name) VALUES ($1, $2) RETURNING id, display_name, created_at`,
-      [id, input.displayName],
+      `INSERT INTO users (id, username, password_hash, first_name, last_name, auth_provider, display_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, username, password_hash, first_name, last_name, auth_provider, display_name, created_at`,
+      [
+        id,
+        input.username?.toLowerCase() ?? null,
+        input.passwordHash ?? null,
+        input.firstName ?? null,
+        input.lastName ?? null,
+        input.authProvider ?? 'guest',
+        input.displayName,
+      ],
     );
-    const row = result.rows[0];
-    return {
-      id: String(row.id),
-      displayName: String(row.display_name),
-      createdAt: new Date(String(row.created_at)).toISOString(),
-    };
+    return mapUser(result.rows[0]);
   }
 
   async getUserById(id: string): Promise<UserRecord | undefined> {
     const result = await this.db.pool.query(
-      `SELECT id, display_name, created_at FROM users WHERE id = $1 LIMIT 1`,
+      `SELECT id, username, password_hash, first_name, last_name, auth_provider, display_name, created_at
+       FROM users
+       WHERE id = $1
+       LIMIT 1`,
       [id],
     );
     const row = result.rows[0];
     if (!row) return undefined;
-    return {
-      id: String(row.id),
-      displayName: String(row.display_name),
-      createdAt: new Date(String(row.created_at)).toISOString(),
-    };
+    return mapUser(row);
+  }
+
+  async getUserByUsername(username: string): Promise<UserRecord | undefined> {
+    const result = await this.db.pool.query(
+      `SELECT id, username, password_hash, first_name, last_name, auth_provider, display_name, created_at
+       FROM users
+       WHERE LOWER(username) = LOWER($1)
+       LIMIT 1`,
+      [username],
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    return mapUser(row);
+  }
+
+  async updateUserDisplayName(id: string, displayName: string): Promise<UserRecord | undefined> {
+    const result = await this.db.pool.query(
+      `UPDATE users
+       SET display_name = $2
+       WHERE id = $1
+       RETURNING id, username, password_hash, first_name, last_name, auth_provider, display_name, created_at`,
+      [id, displayName],
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    return mapUser(row);
   }
 
   async createSession(userId: string): Promise<SessionRecord> {
@@ -135,13 +187,52 @@ export class PostgresMeetingsRepository implements MeetingsRepository {
     return result.rows[0] ? mapMeeting(result.rows[0]) : undefined;
   }
 
-  async addParticipant(input: { meetingId: string; name: string; role: MeetingRole }): Promise<MeetingParticipantRecord> {
+  async updateMeetingPin(meetingId: string, participantId?: string): Promise<MeetingRecord | undefined> {
+    const result = await this.db.pool.query(
+      `UPDATE meetings SET pinned_participant_id = $2 WHERE id = $1 RETURNING *`,
+      [meetingId, participantId ?? null],
+    );
+    return result.rows[0] ? mapMeeting(result.rows[0]) : undefined;
+  }
+
+  async listMeetingsByHostUserId(userId: string): Promise<MeetingRecord[]> {
+    const result = await this.db.pool.query(
+      `SELECT * FROM meetings WHERE host_user_id = $1 ORDER BY created_at DESC`,
+      [userId],
+    );
+    return result.rows.map((row) => mapMeeting(row));
+  }
+
+  async addParticipant(input: {
+    meetingId: string;
+    name: string;
+    role: MeetingRole;
+    userId?: string;
+  }): Promise<MeetingParticipantRecord> {
+    if (input.userId) {
+      const existing = await this.db.pool.query(
+        `SELECT * FROM meeting_participants WHERE meeting_id = $1 AND user_id = $2 LIMIT 1`,
+        [input.meetingId, input.userId],
+      );
+
+      if (existing.rows[0]) {
+        const updated = await this.db.pool.query(
+          `UPDATE meeting_participants
+           SET name = $3, role = $4
+           WHERE meeting_id = $1 AND user_id = $2
+           RETURNING *`,
+          [input.meetingId, input.userId, input.name, input.role],
+        );
+        return mapParticipant(updated.rows[0]);
+      }
+    }
+
     const id = randomUUID();
     const result = await this.db.pool.query(
-      `INSERT INTO meeting_participants (id, meeting_id, name, role)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO meeting_participants (id, meeting_id, user_id, name, role)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [id, input.meetingId, input.name, input.role],
+      [id, input.meetingId, input.userId ?? null, input.name, input.role],
     );
     return mapParticipant(result.rows[0]);
   }

@@ -23,9 +23,21 @@ export class InMemoryMeetingsRepository implements MeetingsRepository {
   private users = new Map<string, UserRecord>();
   private sessions = new Map<string, SessionRecord>();
 
-  async createUser(input: { displayName: string }): Promise<UserRecord> {
+  async createUser(input: {
+    displayName: string;
+    username?: string;
+    passwordHash?: string;
+    firstName?: string;
+    lastName?: string;
+    authProvider?: UserRecord['authProvider'];
+  }): Promise<UserRecord> {
     const user: UserRecord = {
       id: randomUUID(),
+      username: input.username?.toLowerCase(),
+      passwordHash: input.passwordHash,
+      firstName: input.firstName,
+      lastName: input.lastName,
+      authProvider: input.authProvider ?? 'guest',
       displayName: input.displayName,
       createdAt: new Date().toISOString(),
     };
@@ -36,6 +48,25 @@ export class InMemoryMeetingsRepository implements MeetingsRepository {
 
   async getUserById(id: string): Promise<UserRecord | undefined> {
     return this.users.get(id);
+  }
+
+  async getUserByUsername(username: string): Promise<UserRecord | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.username?.toLowerCase() === username.toLowerCase(),
+    );
+  }
+
+  async updateUserDisplayName(id: string, displayName: string): Promise<UserRecord | undefined> {
+    const current = this.users.get(id);
+    if (!current) return undefined;
+
+    const updated: UserRecord = {
+      ...current,
+      displayName,
+    };
+
+    this.users.set(id, updated);
+    return updated;
   }
 
   async createSession(userId: string): Promise<SessionRecord> {
@@ -59,6 +90,7 @@ export class InMemoryMeetingsRepository implements MeetingsRepository {
       title: input.title,
       hostUserId: input.hostUserId,
       hostName: input.hostName,
+      pinnedParticipantId: undefined,
       status: 'active',
       createdAt: new Date().toISOString(),
     };
@@ -78,14 +110,58 @@ export class InMemoryMeetingsRepository implements MeetingsRepository {
     return Array.from(this.meetings.values()).find((meeting) => meeting.code === code);
   }
 
+  async updateMeetingPin(meetingId: string, participantId?: string): Promise<MeetingRecord | undefined> {
+    const current = this.meetings.get(meetingId);
+    if (!current) return undefined;
+
+    const updated: MeetingRecord = {
+      ...current,
+      pinnedParticipantId: participantId,
+    };
+
+    this.meetings.set(meetingId, updated);
+    return updated;
+  }
+
+  async listMeetingsByHostUserId(userId: string): Promise<MeetingRecord[]> {
+    return Array.from(this.meetings.values())
+      .filter((meeting) => meeting.hostUserId === userId)
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }
+
   async addParticipant(input: {
     meetingId: string;
     name: string;
     role: MeetingRole;
+    userId?: string;
   }): Promise<MeetingParticipantRecord> {
+    if (input.userId) {
+      const existing = (this.participants.get(input.meetingId) ?? []).find(
+        (participant) => participant.userId === input.userId,
+      );
+
+      if (existing) {
+        const updated = {
+          ...existing,
+          name: input.name,
+          role: input.role,
+        };
+
+        this.participants.set(
+          input.meetingId,
+          (this.participants.get(input.meetingId) ?? []).map((participant) =>
+            participant.id === existing.id ? updated : participant,
+          ),
+        );
+
+        return updated;
+      }
+    }
+
     const participant: MeetingParticipantRecord = {
       id: randomUUID(),
       meetingId: input.meetingId,
+      userId: input.userId,
       name: input.name,
       role: input.role,
       joinedAt: new Date().toISOString(),

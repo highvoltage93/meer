@@ -24,7 +24,20 @@ type MeetingsState = {
     participantId: string,
     key: 'isMicOn' | 'isCameraOn' | 'isScreenSharing',
   ) => void;
-  addChatMessage: (meetingId: string, author: string, text: string) => Promise<void>;
+  addChatMessage: (
+    meetingId: string,
+    author: string,
+    text: string,
+  ) => Promise<{ id: string; senderName: string; body: string; createdAt: string } | undefined>;
+  appendRealtimeChatMessage: (
+    meetingId: string,
+    message: { id: string; author: string; text: string; timestamp: string },
+  ) => void;
+  patchParticipantState: (
+    meetingId: string,
+    participantId: string,
+    patch: Partial<Pick<Participant, 'isMicOn' | 'isCameraOn' | 'isScreenSharing' | 'isHandRaised'>>,
+  ) => void;
   leaveMeeting: (meetingId: string, participantId: string) => void;
   getMeetingByCode: (code: string) => Meeting | undefined;
 };
@@ -219,7 +232,7 @@ export const useMeetingsStore = create<MeetingsState>()(
       },
       addChatMessage: async (meetingId, author, text) => {
         const meeting = get().meetings[meetingId];
-        if (!meeting || !text.trim()) return;
+        if (!meeting || !text.trim()) return undefined;
 
         const response = await meetingsApi.sendMessage(meetingId, author, text);
 
@@ -238,6 +251,47 @@ export const useMeetingsStore = create<MeetingsState>()(
                   type: 'chat',
                 },
               ],
+            },
+          },
+        }));
+        return response;
+      },
+      appendRealtimeChatMessage: (meetingId, message) => {
+        const meeting = get().meetings[meetingId];
+        if (!meeting) return;
+        if (meeting.activity.some((entry) => entry.id === message.id)) return;
+
+        set((state) => ({
+          meetings: {
+            ...state.meetings,
+            [meetingId]: {
+              ...meeting,
+              activity: [
+                ...meeting.activity,
+                {
+                  id: message.id,
+                  author: message.author,
+                  text: message.text,
+                  timestamp: message.timestamp,
+                  type: 'chat',
+                },
+              ],
+            },
+          },
+        }));
+      },
+      patchParticipantState: (meetingId, participantId, patch) => {
+        const meeting = get().meetings[meetingId];
+        if (!meeting) return;
+
+        set((state) => ({
+          meetings: {
+            ...state.meetings,
+            [meetingId]: {
+              ...meeting,
+              participants: meeting.participants.map((participant) =>
+                participant.id === participantId ? { ...participant, ...patch } : participant,
+              ),
             },
           },
         }));

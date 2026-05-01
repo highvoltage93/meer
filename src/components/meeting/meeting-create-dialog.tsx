@@ -17,17 +17,20 @@ import { Input } from '@/components/ui/input';
 export function MeetingCreateDialog() {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState('Design Review');
-  const [hostName, setHostName] = useState('Alex Johnson');
   const createMeeting = useMeetingsStore((state) => state.createMeeting);
-  const ensureGuestSession = useAuthStore((state) => state.ensureGuestSession);
+  const user = useAuthStore((state) => state.user);
   const isLoading = useMeetingsStore((state) => state.isLoading);
   const error = useMeetingsStore((state) => state.error);
   const navigate = useNavigate();
 
   async function handleCreate() {
-    await ensureGuestSession(hostName);
-    const meetingId = await createMeeting(hostName, title);
-    navigate(`/meeting/${meetingId}/prejoin`);
+    if (!user) {
+      navigate('/login', { replace: true });
+      return;
+    }
+
+    const meetingId = await createMeeting(user.displayName, title);
+    navigate(`/meeting/${meetingId}/prejoin`, { replace: true });
     setOpen(false);
   }
 
@@ -43,7 +46,7 @@ export function MeetingCreateDialog() {
         <DialogHeader>
           <DialogTitle>Launch a meeting room</DialogTitle>
           <DialogDescription>
-            Create a lightweight Google Meet style room. For now everything stays on the frontend so we can iterate on the product flow fast.
+            Create a Google Meet style room with backend persistence, WebSocket room sync, and LiveKit media transport already wired in.
           </DialogDescription>
         </DialogHeader>
 
@@ -53,10 +56,9 @@ export function MeetingCreateDialog() {
             <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Quarterly planning" />
           </label>
 
-          <label className="block space-y-2">
-            <span className="text-sm text-slate-300">Your name</span>
-            <Input value={hostName} onChange={(event) => setHostName(event.target.value)} placeholder="Alex Johnson" />
-          </label>
+          <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-slate-300">
+            Host identity: <span className="font-medium text-white">{user?.displayName ?? 'Signed in user'}</span>
+          </div>
         </div>
 
         <div className="mt-6 grid gap-3 rounded-[24px] border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-300 sm:grid-cols-3">
@@ -70,7 +72,7 @@ export function MeetingCreateDialog() {
           </div>
           <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
             <Sparkles className="mb-3 h-4 w-4 text-cyan-300" />
-            Frontend MVP first
+            Realtime stack ready
           </div>
         </div>
 

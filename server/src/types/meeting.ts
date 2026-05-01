@@ -6,6 +6,7 @@ export type MeetingRecord = {
   title: string;
   hostUserId: string;
   hostName: string;
+  pinnedParticipantId?: string;
   status: 'active' | 'ended';
   createdAt: string;
 };
@@ -13,6 +14,7 @@ export type MeetingRecord = {
 export type MeetingParticipantRecord = {
   id: string;
   meetingId: string;
+  userId?: string;
   name: string;
   role: MeetingRole;
   joinedAt: string;
@@ -33,6 +35,11 @@ export type MeetingMessageRecord = {
 
 export type UserRecord = {
   id: string;
+  username?: string;
+  passwordHash?: string;
+  firstName?: string;
+  lastName?: string;
+  authProvider: 'guest' | 'password';
   displayName: string;
   createdAt: string;
 };
@@ -41,4 +48,6 @@ export type SessionRecord = {
   token: string;
   userId: string;
   createdAt: string;
+  expiresAt?: string;
+  kind?: 'legacy' | 'jwt';
 };

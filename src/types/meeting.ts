@@ -8,6 +8,7 @@ export type ActivityEntry = {
 
 export type Participant = {
   id: string;
+  userId?: string;
   name: string;
   role: 'host' | 'guest' | 'bot';
   isMicOn: boolean;
@@ -23,8 +24,20 @@ export type Meeting = {
   createdAt: string;
   hostName: string;
   code: string;
+  pinnedParticipantId?: string;
   participants: Participant[];
   activity: ActivityEntry[];
+};
+
+export type MeetingSummary = {
+  id: string;
+  title: string;
+  createdAt: string;
+  hostName: string;
+  code: string;
+  participantCount: number;
+  messageCount: number;
+  status: 'active' | 'ended';
 };
 
 export type JoinPreferences = {

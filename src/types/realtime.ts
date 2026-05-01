@@ -41,10 +41,12 @@ export type RealtimeRoomEventHandlers = {
 };
 
 export type RealtimeProvider = {
-  kind: 'mock' | 'livekit';
+  kind: 'livekit';
   joinRoom: (payload: JoinRoomPayload, handlers: RealtimeRoomEventHandlers) => Promise<void>;
   leaveRoom: () => Promise<void>;
   toggleMicrophone: (enabled: boolean) => Promise<void>;
   toggleCamera: (enabled: boolean) => Promise<void>;
   toggleScreenShare: (enabled: boolean) => Promise<void>;
+  switchMicrophoneDevice: (deviceId?: string) => Promise<void>;
+  switchCameraDevice: (deviceId?: string) => Promise<void>;
 };

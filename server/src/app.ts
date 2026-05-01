@@ -1,6 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import sensible from '@fastify/sensible';
+import websocket from '@fastify/websocket';
 import { envPlugin } from './plugins/env.js';
 import { servicesPlugin } from './plugins/services.js';
 import { healthRoutes } from './routes/health-routes.js';
@@ -16,6 +17,7 @@ export async function buildServer() {
     origin: app.serverEnv.CLIENT_ORIGIN,
     credentials: true,
   });
+  await app.register(websocket);
   await app.register(sensible);
   await app.register(servicesPlugin);
 

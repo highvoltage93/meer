@@ -1,3 +1,4 @@
+import { motion } from 'framer-motion';
 import { Mic, MicOff, MonitorUp, Video, VideoOff } from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -18,9 +19,13 @@ export function ParticipantTile({
   onClick?: () => void;
 }) {
   return (
-    <button
+    <motion.button
+      layout
       type="button"
       onClick={onClick}
+      whileHover={onClick ? { y: -2 } : undefined}
+      whileTap={onClick ? { scale: 0.99 } : undefined}
+      transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
       className={cn(
         'group relative block w-full overflow-hidden rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(15,23,42,0.15),rgba(2,6,23,0.88))] p-4 text-left',
         isActive && 'ring-1 ring-cyan-300/60',
@@ -58,6 +63,6 @@ export function ParticipantTile({
           {participant.isScreenSharing ? <MonitorUp className="h-4 w-4 text-cyan-300" /> : null}
         </div>
       </div>
-    </button>
+    </motion.button>
   );
 }

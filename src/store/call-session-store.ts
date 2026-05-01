@@ -17,6 +17,8 @@ type CallSessionState = {
   toggleMicrophone: (enabled: boolean) => Promise<void>;
   toggleCamera: (enabled: boolean) => Promise<void>;
   toggleScreenShare: (enabled: boolean) => Promise<void>;
+  switchMicrophoneDevice: (deviceId?: string) => Promise<void>;
+  switchCameraDevice: (deviceId?: string) => Promise<void>;
 };
 
 export const useCallSessionStore = create<CallSessionState>((set) => ({
@@ -72,5 +74,11 @@ export const useCallSessionStore = create<CallSessionState>((set) => ({
   },
   async toggleScreenShare(enabled) {
     await getRealtimeProvider().toggleScreenShare(enabled);
+  },
+  async switchMicrophoneDevice(deviceId) {
+    await getRealtimeProvider().switchMicrophoneDevice(deviceId);
+  },
+  async switchCameraDevice(deviceId) {
+    await getRealtimeProvider().switchCameraDevice(deviceId);
   },
 }));

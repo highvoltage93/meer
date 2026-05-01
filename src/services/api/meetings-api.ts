@@ -1,17 +1,6 @@
 import { env } from '@/config/env';
-import type { ActivityEntry, Meeting, MeetingParticipantStatePatch, Participant } from '@/types/meeting';
-
-function getSessionToken() {
-  const raw = localStorage.getItem('mitingo-auth-storage');
-  if (!raw) return undefined;
-
-  try {
-    const parsed = JSON.parse(raw) as { state?: { session?: { token?: string } } };
-    return parsed.state?.session?.token;
-  } catch {
-    return undefined;
-  }
-}
+import { getAuthToken } from '@/services/api/auth-api';
+import type { ActivityEntry, Meeting, MeetingParticipantStatePatch, MeetingSummary, Participant } from '@/types/meeting';
 
 type ApiMeeting = {
   id: string;
@@ -19,9 +8,11 @@ type ApiMeeting = {
   createdAt: string;
   hostName: string;
   code: string;
+  pinnedParticipantId?: string;
   status: 'active' | 'ended';
   participants: Array<{
     id: string;
+    userId?: string;
     name: string;
     role: 'host' | 'guest';
     joinedAt: string;
@@ -42,25 +33,53 @@ type JoinTokenResponse = {
   meetingId: string;
   roomName: string;
   token: string | null;
-  provider: 'mock' | 'livekit';
+  provider: 'livekit';
   participant: {
     id: string;
+    userId?: string;
     name: string;
     role: 'host' | 'guest';
     joinedAt: string;
   };
 };
 
+type MeetingSocketOptions = {
+  onOpen?: () => void;
+  onClose?: () => void;
+  onError?: () => void;
+  onReconnectScheduled?: () => void;
+};
+
+function notifySessionExpired() {
+  window.dispatchEvent(new CustomEvent('mitingo:session-expired'));
+}
+
+function getMeetingsWebSocketUrl(meetingId: string) {
+  const apiUrl = new URL(env.apiBaseUrl);
+  const protocol = apiUrl.protocol === 'https:' ? 'wss:' : 'ws:';
+  const basePath = apiUrl.pathname.replace(/\/$/, '');
+  const socketUrl = new URL(`${protocol}//${apiUrl.host}${basePath}/ws/meetings/${meetingId}`);
+  const sessionToken = getAuthToken();
+  if (sessionToken) {
+    socketUrl.searchParams.set('sessionToken', sessionToken);
+  }
+  return socketUrl.toString();
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const sessionToken = getSessionToken();
+  const sessionToken = getAuthToken();
   const response = await fetch(`${env.apiBaseUrl}${path}`, {
     headers: {
       'Content-Type': 'application/json',
-      ...(sessionToken ? { 'x-session-token': sessionToken } : {}),
+      ...(sessionToken ? { Authorization: `Bearer ${sessionToken}`, 'x-session-token': sessionToken } : {}),
       ...(init?.headers ?? {}),
     },
     ...init,
   });
+
+  if (response.status === 401) {
+    notifySessionExpired();
+  }
 
   if (!response.ok) {
     const text = await response.text();
@@ -73,6 +92,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 function toParticipant(participant: ApiMeeting['participants'][number]): Participant {
   return {
     id: participant.id,
+    userId: participant.userId,
     name: participant.name,
     role: participant.role,
     isMicOn: participant.isMicOn,
@@ -108,6 +128,7 @@ function toMeeting(meeting: ApiMeeting): Meeting {
     createdAt: meeting.createdAt,
     hostName: meeting.hostName,
     code: meeting.code,
+    pinnedParticipantId: meeting.pinnedParticipantId,
     participants: meeting.participants.map(toParticipant),
     activity: toActivity(meeting.messages, meeting.hostName),
   };
@@ -120,24 +141,13 @@ export const meetingsApi = {
       body: JSON.stringify(input),
     });
 
-    return {
+    const normalizedMeeting: Meeting = {
       id: meeting.id,
       title: meeting.title,
       createdAt: meeting.createdAt,
       hostName: meeting.hostName,
       code: meeting.code,
-      participants: [
-        {
-          id: `host-${meeting.id}`,
-          name: meeting.hostName,
-          role: 'host' as const,
-          isMicOn: true,
-          isCameraOn: true,
-          isScreenSharing: false,
-          isHandRaised: false,
-          status: 'joined' as const,
-        },
-      ],
+      participants: [],
       activity: [
         {
           id: `system-${meeting.id}`,
@@ -146,7 +156,9 @@ export const meetingsApi = {
           type: 'system' as const,
         },
       ],
-    } satisfies Meeting;
+    };
+
+    return normalizedMeeting;
   },
   async getMeeting(meetingId: string) {
     const meeting = await request<ApiMeeting>(`/meetings/${meetingId}`);
@@ -155,6 +167,22 @@ export const meetingsApi = {
   async getMeetingByCode(code: string) {
     const meeting = await request<ApiMeeting>(`/meetings/by-code/${code}`);
     return toMeeting(meeting);
+  },
+  async getMyMeetings() {
+    const meetings = await request<ApiMeeting[]>('/meetings/mine');
+    return meetings.map(
+      (meeting) =>
+        ({
+          id: meeting.id,
+          title: meeting.title,
+          createdAt: meeting.createdAt,
+          hostName: meeting.hostName,
+          code: meeting.code,
+          participantCount: meeting.participants.length,
+          messageCount: meeting.messages.length,
+          status: meeting.status,
+        }) satisfies MeetingSummary,
+    );
   },
   async requestJoinToken(meetingId: string, participantName: string) {
     return request<JoinTokenResponse>(`/meetings/${meetingId}/join-token`, {
@@ -187,12 +215,63 @@ export const meetingsApi = {
       body: JSON.stringify(patch),
     });
   },
-  subscribeToMeeting(meetingId: string, onMeeting: (meeting: Meeting) => void) {
-    const source = new EventSource(`${env.apiBaseUrl}/meetings/${meetingId}/events`);
-    source.addEventListener('meeting', (event) => {
-      const payload = JSON.parse((event as MessageEvent).data) as ApiMeeting;
-      onMeeting(toMeeting(payload));
+  async updateMeetingPin(meetingId: string, participantId: string | null) {
+    return request<ApiMeeting>(`/meetings/${meetingId}/pin`, {
+      method: 'PATCH',
+      body: JSON.stringify({ participantId }),
     });
-    return source;
+  },
+  subscribeToMeeting(meetingId: string, onMeeting: (meeting: Meeting) => void, options?: MeetingSocketOptions) {
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+    let isClosedManually = false;
+
+    const connect = () => {
+      socket = new WebSocket(getMeetingsWebSocketUrl(meetingId));
+
+      socket.onopen = () => {
+        options?.onOpen?.();
+      };
+
+      socket.onmessage = (event) => {
+        const payload = JSON.parse(event.data) as
+          | { type: 'meeting'; payload: ApiMeeting }
+          | { type: 'error'; message: string };
+
+        if (payload.type === 'meeting') {
+          onMeeting(toMeeting(payload.payload));
+          return;
+        }
+
+        if (payload.message === 'Session required') {
+          notifySessionExpired();
+          isClosedManually = true;
+          socket?.close();
+        }
+      };
+
+      socket.onerror = () => {
+        options?.onError?.();
+      };
+
+      socket.onclose = () => {
+        if (isClosedManually) return;
+        options?.onClose?.();
+        options?.onReconnectScheduled?.();
+        reconnectTimer = window.setTimeout(connect, 1000);
+      };
+    };
+
+    connect();
+
+    return {
+      close() {
+        isClosedManually = true;
+        if (reconnectTimer) {
+          window.clearTimeout(reconnectTimer);
+        }
+        socket?.close();
+      },
+    };
   },
 };

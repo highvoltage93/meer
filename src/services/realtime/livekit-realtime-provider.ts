@@ -70,6 +70,16 @@ export class LiveKitRealtimeProvider implements RealtimeProvider {
     this.emitSnapshot();
   }
 
+  async switchMicrophoneDevice(deviceId?: string) {
+    await this.room.switchActiveDevice('audioinput', deviceId ?? 'default');
+    this.emitSnapshot();
+  }
+
+  async switchCameraDevice(deviceId?: string) {
+    await this.room.switchActiveDevice('videoinput', deviceId ?? 'default');
+    this.emitSnapshot();
+  }
+
   private bindEvents() {
     this.room.on(RoomEvent.Connected, () => this.emitSnapshot());
     this.room.on(RoomEvent.Disconnected, () => this.emitSnapshot());

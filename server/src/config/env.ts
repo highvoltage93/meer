@@ -5,6 +5,7 @@ const envSchema = z.object({
   HOST: z.string().default('127.0.0.1'),
   CLIENT_ORIGIN: z.string().default('http://127.0.0.1:5173'),
   DATABASE_URL: z.string().default(''),
+  JWT_SECRET: z.string().default('local-dev-jwt-secret-change-me'),
   LIVEKIT_URL: z.string().default(''),
   LIVEKIT_API_KEY: z.string().default(''),
   LIVEKIT_API_SECRET: z.string().default(''),

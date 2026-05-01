@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { motion } from 'framer-motion';
 import { cn } from '@/lib/utils';
 
 export function HeroShell({ className, children }: { className?: string; children: ReactNode }) {
@@ -9,7 +10,14 @@ export function HeroShell({ className, children }: { className?: string; childre
         className,
       )}
     >
-      <div className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-7xl flex-col">{children}</div>
+      <motion.div
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.32, ease: [0.22, 1, 0.36, 1] }}
+        className="mx-auto flex min-h-[calc(100vh-3rem)] w-full max-w-7xl flex-col"
+      >
+        {children}
+      </motion.div>
     </main>
   );
 }
