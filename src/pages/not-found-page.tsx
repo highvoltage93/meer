@@ -9,7 +9,7 @@ export function NotFoundPage() {
       <Card className="max-w-lg">
         <CardContent className="space-y-4">
           <h1 className="text-3xl font-semibold">Page not found</h1>
-          <p className="text-slate-400">The route you opened is outside the current meeting flow.</p>
+          <p className="text-slate-500">The route you opened is outside the current meeting flow.</p>
           <Button asChild>
             <Link to="/">Back home</Link>
           </Button>

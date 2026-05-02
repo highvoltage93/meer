@@ -8,12 +8,12 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: 'bg-slate-950 text-white hover:bg-slate-800 focus-visible:ring-slate-900',
-        secondary: 'bg-white/12 text-white hover:bg-white/18 focus-visible:ring-white',
-        ghost: 'bg-transparent text-slate-200 hover:bg-white/10 focus-visible:ring-white',
-        outline: 'border border-white/15 bg-transparent text-slate-100 hover:bg-white/8 focus-visible:ring-white',
-        destructive: 'bg-rose-500 text-white hover:bg-rose-400 focus-visible:ring-rose-400',
-        accent: 'bg-cyan-300 text-slate-950 hover:bg-cyan-200 focus-visible:ring-cyan-200',
+        default: 'bg-slate-950 text-white shadow-[0_12px_28px_rgba(15,23,42,0.18)] hover:bg-slate-800 focus-visible:ring-slate-900',
+        secondary: 'border border-slate-200/80 bg-white/85 text-slate-800 shadow-sm hover:bg-white focus-visible:ring-slate-300',
+        ghost: 'bg-transparent text-slate-700 hover:bg-white/70 focus-visible:ring-slate-300',
+        outline: 'border border-slate-200 bg-white/40 text-slate-800 hover:border-cyan-300 hover:bg-white/85 focus-visible:ring-cyan-200',
+        destructive: 'bg-rose-500 text-white shadow-[0_12px_26px_rgba(244,63,94,0.24)] hover:bg-rose-400 focus-visible:ring-rose-400',
+        accent: 'bg-[linear-gradient(135deg,#67e8f9,#22d3ee_48%,#34d399)] text-slate-950 shadow-[0_16px_34px_rgba(34,211,238,0.28)] hover:brightness-105 focus-visible:ring-cyan-200',
       },
       size: {
         default: 'h-11 px-5',

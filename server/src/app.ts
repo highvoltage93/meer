@@ -16,6 +16,8 @@ export async function buildServer() {
   await app.register(cors, {
     origin: app.serverEnv.CLIENT_ORIGIN,
     credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-session-token'],
   });
   await app.register(websocket);
   await app.register(sensible);

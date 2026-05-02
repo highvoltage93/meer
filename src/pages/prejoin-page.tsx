@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Copy, Mic, MicOff, Video, VideoOff } from 'lucide-react';
 import { HeroShell } from '@/components/layout/hero-shell';
@@ -20,6 +20,8 @@ export function PreJoinPage() {
   const navigate = useNavigate();
   const [isJoining, setIsJoining] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+  const isEnteringRoomRef = useRef(false);
+  const stalePresenceCleanupRef = useRef<string | null>(null);
   const meeting = useMeetingsStore((state) => state.meetings[meetingId]);
   const fetchMeeting = useMeetingsStore((state) => state.fetchMeeting);
   const preferences = useMeetingsStore((state) => state.localPreferences);
@@ -30,6 +32,7 @@ export function PreJoinPage() {
   const meetingError = useMeetingsStore((state) => state.error);
   const isLoadingMeeting = useMeetingsStore((state) => state.isLoading);
   const joinRealtimeRoom = useCallSessionStore((state) => state.joinRoom);
+  const leaveRealtimeRoom = useCallSessionStore((state) => state.leaveRoom);
   const realtimeState = useCallSessionStore((state) => state.connectionState);
   const realtimeError = useCallSessionStore((state) => state.error);
   const { audioInputs, videoInputs, error: devicesError } = useMediaDevices();
@@ -58,13 +61,33 @@ export function PreJoinPage() {
     updatePreferences({ name: authUser.displayName });
   }, [authUser?.displayName, preferences.name, updatePreferences]);
 
+  useEffect(() => {
+    setCurrentParticipantId(undefined);
+    void leaveRealtimeRoom();
+  }, [leaveRealtimeRoom, meetingId, setCurrentParticipantId]);
+
+  useEffect(() => {
+    if (!meetingId || !meeting || !authUser?.id || isJoining || isEnteringRoomRef.current) return;
+
+    const staleSelfPresence = meeting.participants.find((participant) => participant.userId === authUser.id);
+    if (!staleSelfPresence || stalePresenceCleanupRef.current === staleSelfPresence.id) return;
+
+    stalePresenceCleanupRef.current = staleSelfPresence.id;
+    void meetingsApi
+      .leaveParticipant(meetingId, staleSelfPresence.id)
+      .then(() => fetchMeeting(meetingId))
+      .catch(() => {
+        stalePresenceCleanupRef.current = null;
+      });
+  }, [authUser?.id, fetchMeeting, isJoining, meeting, meetingId]);
+
   if (!meeting && isLoadingMeeting) {
     return (
       <HeroShell className="items-center justify-center">
         <Card className="max-w-lg">
           <CardContent className="space-y-4">
             <h1 className="text-3xl font-semibold">Loading meeting</h1>
-            <p className="text-slate-400">Fetching room details from the backend.</p>
+            <p className="text-slate-500">Fetching room details from the backend.</p>
           </CardContent>
         </Card>
       </HeroShell>
@@ -77,7 +100,7 @@ export function PreJoinPage() {
         <Card className="max-w-lg">
           <CardContent className="space-y-4">
             <h1 className="text-3xl font-semibold">Meeting not found</h1>
-            <p className="text-slate-400">{meetingError ?? 'This room could not be loaded from the backend.'}</p>
+            <p className="text-slate-500">{meetingError ?? 'This room could not be loaded from the backend.'}</p>
             <Button asChild>
               <Link to="/">Back home</Link>
             </Button>
@@ -103,7 +126,7 @@ export function PreJoinPage() {
               <div>
                 <Badge variant="accent">Device preview</Badge>
                 <h1 className="mt-4 text-4xl font-semibold">{meeting.title}</h1>
-                <p className="mt-2 text-slate-400">Meeting code {meeting.code} | hosted by {meeting.hostName}</p>
+                <p className="mt-2 text-slate-500">Meeting code {meeting.code} | hosted by {meeting.hostName}</p>
               </div>
             </div>
 
@@ -128,9 +151,9 @@ export function PreJoinPage() {
 
             <div className="grid gap-4 sm:grid-cols-2">
               <label className="block space-y-2">
-                <span className="text-sm text-slate-300">Microphone</span>
+                <span className="text-sm text-slate-600">Microphone</span>
                 <select
-                  className="h-12 w-full rounded-2xl border border-white/12 bg-black/20 px-4 text-sm text-white"
+                  className="h-12 w-full rounded-2xl border border-slate-200 bg-white/80 px-4 text-sm text-slate-900 shadow-sm"
                   value={preferences.selectedMicrophoneId ?? ''}
                   onChange={(event) => updatePreferences({ selectedMicrophoneId: event.target.value || undefined })}
                 >
@@ -144,9 +167,9 @@ export function PreJoinPage() {
               </label>
 
               <label className="block space-y-2">
-                <span className="text-sm text-slate-300">Camera</span>
+                <span className="text-sm text-slate-600">Camera</span>
                 <select
-                  className="h-12 w-full rounded-2xl border border-white/12 bg-black/20 px-4 text-sm text-white"
+                  className="h-12 w-full rounded-2xl border border-slate-200 bg-white/80 px-4 text-sm text-slate-900 shadow-sm"
                   value={preferences.selectedCameraId ?? ''}
                   onChange={(event) => updatePreferences({ selectedCameraId: event.target.value || undefined })}
                 >
@@ -169,13 +192,13 @@ export function PreJoinPage() {
           <CardContent className="p-6 sm:p-8">
             <Badge>Join details</Badge>
             <h2 className="mt-4 text-3xl font-semibold">Ready when you are</h2>
-            <p className="mt-3 text-slate-400">
+            <p className="mt-3 text-slate-500">
               Fine-tune your name, then enter the room. This step now asks the backend for the room access payload.
             </p>
 
             <div className="mt-6 space-y-4">
               <label className="block space-y-2">
-                <span className="text-sm text-slate-300">Display name</span>
+                <span className="text-sm text-slate-600">Display name</span>
                 <Input
                   value={preferences.name}
                   onChange={(event) => updatePreferences({ name: event.target.value })}
@@ -184,7 +207,7 @@ export function PreJoinPage() {
               </label>
 
               <label className="block space-y-2">
-                <span className="text-sm text-slate-300">Invite link</span>
+                <span className="text-sm text-slate-600">Invite link</span>
                 <div className="flex gap-3">
                   <Input readOnly value={joinUrl} />
                   <Button
@@ -207,6 +230,7 @@ export function PreJoinPage() {
                 disabled={isJoining || !preferences.name.trim()}
                 onClick={async () => {
                   try {
+                    isEnteringRoomRef.current = true;
                     setIsJoining(true);
                     setJoinError(null);
                     const joinPayload = await meetingsApi.requestJoinToken(meetingId, preferences.name);
@@ -219,6 +243,7 @@ export function PreJoinPage() {
                       cameraEnabled: preferences.isCameraOn,
                     });
                   } catch (error) {
+                    isEnteringRoomRef.current = false;
                     setJoinError(
                       error instanceof Error ? error.message : 'Unable to enter the room right now. Please try again.',
                     );
@@ -234,8 +259,8 @@ export function PreJoinPage() {
               </Button>
             </div>
 
-            <div className="mt-6 rounded-[24px] border border-white/10 bg-black/20 p-4 text-sm text-slate-300">
-              <p className="font-medium text-white">Realtime status</p>
+            <div className="mt-6 rounded-[24px] border border-slate-200 bg-white/65 p-4 text-sm text-slate-600">
+              <p className="font-medium text-slate-950">Realtime status</p>
               <p className="mt-2">Connection layer: {realtimeState}</p>
               {realtimeError ? <p className="mt-2 text-amber-300">{realtimeError}</p> : null}
               {joinError ? <p className="mt-2 text-rose-300">{joinError}</p> : null}

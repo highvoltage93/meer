@@ -99,16 +99,16 @@ export function HomePage() {
           <Badge variant="accent" className="mb-5">
             Video-first collaboration
           </Badge>
-          <h1 className="max-w-xl text-5xl font-semibold tracking-tight text-white sm:text-6xl">
+          <h1 className="max-w-xl text-5xl font-semibold tracking-tight text-slate-950 sm:text-6xl">
             Clean meeting UX inspired by Google Meet, shaped for modern product teams.
           </h1>
-          <p className="mt-6 max-w-lg text-lg leading-8 text-slate-300">
+          <p className="mt-6 max-w-lg text-lg leading-8 text-slate-600">
             Create a room, share a code, preview devices, join the call, and collaborate on a realtime stack backed by LiveKit, Postgres, and WebSocket room sync.
           </p>
 
           <div className="mt-10 flex flex-col gap-4 sm:flex-row">
             <MeetingCreateDialog />
-            <div className="flex w-full max-w-md items-center gap-3 rounded-full border border-white/10 bg-white/[0.04] p-2">
+            <div className="flex w-full max-w-md items-center gap-3 rounded-full border border-white/80 bg-white/75 p-2 shadow-sm">
               <Input
                 className="h-10 border-0 bg-transparent px-3 py-0"
                 placeholder="Enter meeting code"
@@ -147,37 +147,37 @@ export function HomePage() {
         </div>
 
         <Card className="relative overflow-hidden">
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(103,232,249,0.18),transparent_24%)]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(103,232,249,0.24),transparent_26%)]" />
           <CardContent className="relative space-y-6 p-6 sm:p-8">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm uppercase tracking-[0.25em] text-cyan-200/80">Today</p>
+                <p className="text-sm uppercase tracking-[0.25em] text-cyan-700/80">Today</p>
                 <h2 className="mt-2 text-3xl font-semibold">Your meeting memory</h2>
               </div>
               <Badge variant="success">{myMeetings.length} server rooms</Badge>
             </div>
 
             <div className="grid gap-4">
-              <div className="rounded-[26px] border border-cyan-300/15 bg-cyan-300/8 p-5">
-                <p className="text-xs uppercase tracking-[0.2em] text-cyan-100/80">Realtime architecture</p>
-                <p className="mt-3 text-lg font-medium text-white">
+              <div className="rounded-[26px] border border-cyan-200 bg-cyan-50/75 p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-cyan-700/80">Realtime architecture</p>
+                <p className="mt-3 text-lg font-medium text-slate-950">
                   Provider: LiveKit
                 </p>
-                <p className="mt-2 text-sm leading-6 text-slate-300">
+                <p className="mt-2 text-sm leading-6 text-slate-600">
                   API base URL: {env.apiBaseUrl}
                 </p>
-                <p className="mt-2 text-sm leading-6 text-slate-300">
+                <p className="mt-2 text-sm leading-6 text-slate-600">
                   {env.isLivekitConfigured
                     ? 'Frontend requests backend-issued room tokens and connects to a real SFU.'
                     : 'Add LiveKit credentials to enable the full realtime media transport.'}
                 </p>
-                <p className="mt-2 text-sm leading-6 text-slate-300">
+                <p className="mt-2 text-sm leading-6 text-slate-600">
                   Local cache: {recentMeetings} rooms. Persistence: {myMeetings.length} rooms in Postgres.
                 </p>
               </div>
 
               {isLoadingMyMeetings ? (
-                <div className="rounded-[26px] border border-dashed border-white/10 bg-black/15 p-6 text-slate-300">
+                <div className="rounded-[26px] border border-dashed border-slate-200 bg-white/55 p-6 text-slate-600">
                   Loading your meetings from the backend...
                 </div>
               ) : myMeetings.length ? (
@@ -186,12 +186,12 @@ export function HomePage() {
                     key={meeting.id}
                     type="button"
                     onClick={() => navigate(`/meeting/${meeting.id}/prejoin`, { replace: true })}
-                    className="rounded-[26px] border border-white/10 bg-black/20 p-5 text-left transition hover:border-cyan-300/40 hover:bg-black/30"
+                    className="rounded-[26px] border border-white/80 bg-white/70 p-5 text-left shadow-sm transition hover:border-cyan-300 hover:bg-white"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div>
-                        <p className="text-lg font-medium text-white">{meeting.title}</p>
-                        <p className="mt-2 text-sm text-slate-400">
+                        <p className="text-lg font-medium text-slate-950">{meeting.title}</p>
+                        <p className="mt-2 text-sm text-slate-500">
                           {meeting.participantCount} participants | {meeting.messageCount} messages | code {meeting.code}
                         </p>
                       </div>
@@ -200,7 +200,7 @@ export function HomePage() {
                   </button>
                 ))
               ) : (
-                <div className="rounded-[26px] border border-dashed border-white/10 bg-black/15 p-6 text-slate-300">
+                <div className="rounded-[26px] border border-dashed border-slate-200 bg-white/55 p-6 text-slate-600">
                   {session
                     ? 'No persisted rooms yet. Create the first call from the left panel.'
                     : 'Create a room to initialize your guest identity and server-backed meeting history.'}
@@ -224,10 +224,10 @@ function FeatureCard({
   description: string;
 }) {
   return (
-    <div className="rounded-[26px] border border-white/10 bg-white/[0.04] p-5">
+    <div className="rounded-[26px] border border-white/80 bg-white/65 p-5 shadow-sm">
       <div className="mb-4">{icon}</div>
       <h3 className="text-lg font-medium">{title}</h3>
-      <p className="mt-2 text-sm leading-6 text-slate-400">{description}</p>
+      <p className="mt-2 text-sm leading-6 text-slate-500">{description}</p>
     </div>
   );
 }

@@ -78,10 +78,10 @@ export function AuthPage({ mode }: AuthPageProps) {
           className="max-w-xl"
         >
           <MitingoLogo />
-          <h1 className="mt-8 text-5xl font-semibold tracking-tight text-white">
+          <h1 className="mt-8 text-5xl font-semibold tracking-tight text-slate-950">
             {isRegister ? 'Create your meeting identity.' : 'Sign in to your meeting space.'}
           </h1>
-          <p className="mt-5 text-lg leading-8 text-slate-300">
+          <p className="mt-5 text-lg leading-8 text-slate-600">
             Your account owns rooms, chat history, participant identity, and authenticated WebSocket sync.
           </p>
         </motion.div>
@@ -89,12 +89,12 @@ export function AuthPage({ mode }: AuthPageProps) {
         <Card className="w-full max-w-md">
           <CardContent className="p-6 sm:p-8">
             <div className="mb-6 flex items-center gap-3">
-              <div className="grid h-11 w-11 place-items-center rounded-2xl border border-cyan-300/20 bg-cyan-300/10 text-cyan-100">
+              <div className="grid h-11 w-11 place-items-center rounded-2xl border border-cyan-200 bg-cyan-50 text-cyan-700">
                 {isRegister ? <UserPlus className="h-5 w-5" /> : <LockKeyhole className="h-5 w-5" />}
               </div>
               <div>
-                <h2 className="text-2xl font-semibold text-white">{isRegister ? 'Register' : 'Login'}</h2>
-                <p className="text-sm text-slate-400">Secure account access for your rooms.</p>
+                <h2 className="text-2xl font-semibold text-slate-950">{isRegister ? 'Register' : 'Login'}</h2>
+                <p className="text-sm text-slate-500">Secure account access for your rooms.</p>
               </div>
             </div>
 
@@ -102,7 +102,7 @@ export function AuthPage({ mode }: AuthPageProps) {
               {isRegister ? (
                 <div className="grid gap-4 sm:grid-cols-2">
                   <label className="block space-y-2">
-                    <span className="text-sm text-slate-300">First name</span>
+                    <span className="text-sm text-slate-600">First name</span>
                     <Input
                       value={form.firstName}
                       onChange={(event) => setForm((state) => ({ ...state, firstName: event.target.value }))}
@@ -111,7 +111,7 @@ export function AuthPage({ mode }: AuthPageProps) {
                     />
                   </label>
                   <label className="block space-y-2">
-                    <span className="text-sm text-slate-300">Last name</span>
+                    <span className="text-sm text-slate-600">Last name</span>
                     <Input
                       value={form.lastName}
                       onChange={(event) => setForm((state) => ({ ...state, lastName: event.target.value }))}
@@ -123,7 +123,7 @@ export function AuthPage({ mode }: AuthPageProps) {
               ) : null}
 
               <label className="block space-y-2">
-                <span className="text-sm text-slate-300">Username</span>
+                <span className="text-sm text-slate-600">Username</span>
                 <Input
                   value={form.username}
                   onChange={(event) => setForm((state) => ({ ...state, username: event.target.value }))}
@@ -133,7 +133,7 @@ export function AuthPage({ mode }: AuthPageProps) {
               </label>
 
               <label className="block space-y-2">
-                <span className="text-sm text-slate-300">Password</span>
+                <span className="text-sm text-slate-600">Password</span>
                 <Input
                   type="password"
                   value={form.password}
@@ -149,10 +149,10 @@ export function AuthPage({ mode }: AuthPageProps) {
               </Button>
             </form>
 
-            <p className="mt-6 text-center text-sm text-slate-400">
+            <p className="mt-6 text-center text-sm text-slate-500">
               {isRegister ? 'Already have an account?' : 'Need an account?'}{' '}
               <Link
-                className="font-medium text-cyan-200 transition hover:text-cyan-100"
+                className="font-medium text-cyan-700 transition hover:text-cyan-900"
                 to={`${isRegister ? '/login' : '/register'}?redirect=${encodeURIComponent(redirectTo)}`}
               >
                 {isRegister ? 'Login' : 'Register'}

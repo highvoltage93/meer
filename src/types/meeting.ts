@@ -24,6 +24,7 @@ export type Meeting = {
   createdAt: string;
   hostName: string;
   code: string;
+  status: 'active' | 'ended';
   pinnedParticipantId?: string;
   participants: Participant[];
   activity: ActivityEntry[];

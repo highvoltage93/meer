@@ -52,25 +52,25 @@ export function MeetingCreateDialog() {
 
         <div className="mt-6 space-y-4">
           <label className="block space-y-2">
-            <span className="text-sm text-slate-300">Meeting title</span>
+            <span className="text-sm text-slate-600">Meeting title</span>
             <Input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Quarterly planning" />
           </label>
 
-          <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-sm text-slate-300">
-            Host identity: <span className="font-medium text-white">{user?.displayName ?? 'Signed in user'}</span>
+          <div className="rounded-2xl border border-slate-200 bg-white/70 p-4 text-sm text-slate-600">
+            Host identity: <span className="font-medium text-slate-950">{user?.displayName ?? 'Signed in user'}</span>
           </div>
         </div>
 
-        <div className="mt-6 grid gap-3 rounded-[24px] border border-white/10 bg-white/[0.03] p-4 text-sm text-slate-300 sm:grid-cols-3">
-          <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
+        <div className="mt-6 grid gap-3 rounded-[24px] border border-slate-200 bg-cyan-50/60 p-4 text-sm text-slate-600 sm:grid-cols-3">
+          <div className="rounded-2xl border border-white/80 bg-white/70 p-4">
             <Link2 className="mb-3 h-4 w-4 text-cyan-300" />
             Instant join link
           </div>
-          <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
+          <div className="rounded-2xl border border-white/80 bg-white/70 p-4">
             <CalendarClock className="mb-3 h-4 w-4 text-cyan-300" />
             Clean pre-join flow
           </div>
-          <div className="rounded-2xl border border-white/8 bg-black/20 p-4">
+          <div className="rounded-2xl border border-white/80 bg-white/70 p-4">
             <Sparkles className="mb-3 h-4 w-4 text-cyan-300" />
             Realtime stack ready
           </div>

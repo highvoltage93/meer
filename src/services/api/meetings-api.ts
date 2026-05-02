@@ -68,12 +68,17 @@ function getMeetingsWebSocketUrl(meetingId: string) {
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const sessionToken = getAuthToken();
+  const headers: Record<string, string> = {
+    ...(sessionToken ? { Authorization: `Bearer ${sessionToken}`, 'x-session-token': sessionToken } : {}),
+    ...((init?.headers as Record<string, string> | undefined) ?? {}),
+  };
+
+  if (init?.body) {
+    headers['Content-Type'] = 'application/json';
+  }
+
   const response = await fetch(`${env.apiBaseUrl}${path}`, {
-    headers: {
-      'Content-Type': 'application/json',
-      ...(sessionToken ? { Authorization: `Bearer ${sessionToken}`, 'x-session-token': sessionToken } : {}),
-      ...(init?.headers ?? {}),
-    },
+    headers,
     ...init,
   });
 
@@ -86,7 +91,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(text || `Request failed with status ${response.status}`);
   }
 
-  return response.json() as Promise<T>;
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const text = await response.text();
+  if (!text) {
+    return undefined as T;
+  }
+
+  return JSON.parse(text) as T;
 }
 
 function toParticipant(participant: ApiMeeting['participants'][number]): Participant {
@@ -128,6 +142,7 @@ function toMeeting(meeting: ApiMeeting): Meeting {
     createdAt: meeting.createdAt,
     hostName: meeting.hostName,
     code: meeting.code,
+    status: meeting.status,
     pinnedParticipantId: meeting.pinnedParticipantId,
     participants: meeting.participants.map(toParticipant),
     activity: toActivity(meeting.messages, meeting.hostName),
@@ -147,6 +162,7 @@ export const meetingsApi = {
       createdAt: meeting.createdAt,
       hostName: meeting.hostName,
       code: meeting.code,
+      status: meeting.status,
       participants: [],
       activity: [
         {
@@ -202,6 +218,16 @@ export const meetingsApi = {
   async leaveParticipant(meetingId: string, participantId: string) {
     await request<void>(`/meetings/${meetingId}/participants/${participantId}`, {
       method: 'DELETE',
+    });
+  },
+  leaveParticipantKeepAlive(meetingId: string, participantId: string) {
+    const token = getAuthToken();
+    void fetch(`${env.apiBaseUrl}/meetings/${meetingId}/participants/${participantId}`, {
+      method: 'DELETE',
+      keepalive: true,
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}`, 'x-session-token': token } : {}),
+      },
     });
   },
   async updateParticipantState(meetingId: string, participantId: string, patch: MeetingParticipantStatePatch) {

@@ -22,8 +22,12 @@ export class MeetingEventsService {
     const listeners = this.listeners.get(meetingId);
     if (!listeners) return;
 
-    for (const listener of listeners) {
-      listener(snapshot);
+    for (const listener of Array.from(listeners)) {
+      try {
+        listener(snapshot);
+      } catch {
+        listeners.delete(listener);
+      }
     }
   }
 }

@@ -298,10 +298,15 @@ export const useMeetingsStore = create<MeetingsState>()(
       },
       leaveMeeting: (meetingId, participantId) => {
         const meeting = get().meetings[meetingId];
-        if (!meeting) return;
+        if (!meeting) {
+          set((state) => ({
+            activeMeetingId: state.activeMeetingId === meetingId ? undefined : state.activeMeetingId,
+            currentParticipantId: state.currentParticipantId === participantId ? undefined : state.currentParticipantId,
+          }));
+          return;
+        }
 
         const participant = meeting.participants.find((item) => item.id === participantId);
-        if (!participant) return;
 
         set((state) => ({
           meetings: {
@@ -309,13 +314,13 @@ export const useMeetingsStore = create<MeetingsState>()(
             [meetingId]: {
               ...meeting,
               participants: meeting.participants.filter((item) => item.id !== participantId),
-              activity: [
-                ...meeting.activity,
-                createSystemActivity(`${participant.name} left the meeting.`),
-              ],
+              activity: participant
+                ? [...meeting.activity, createSystemActivity(`${participant.name} left the meeting.`)]
+                : meeting.activity,
             },
           },
           activeMeetingId: state.activeMeetingId === meetingId ? undefined : state.activeMeetingId,
+          currentParticipantId: state.currentParticipantId === participantId ? undefined : state.currentParticipantId,
         }));
       },
       getMeetingByCode: (code) => Object.values(get().meetings).find((meeting) => meeting.code === code),
@@ -323,11 +328,15 @@ export const useMeetingsStore = create<MeetingsState>()(
     {
       name: 'mitingo-storage',
       storage: createJSONStorage(() => localStorage),
+      version: 2,
+      migrate: (persistedState) => ({
+        ...(persistedState as Partial<MeetingsState>),
+        currentParticipantId: undefined,
+      }),
       partialize: (state) => ({
         meetings: state.meetings,
         activeMeetingId: state.activeMeetingId,
         currentUserName: state.currentUserName,
-        currentParticipantId: state.currentParticipantId,
         localPreferences: state.localPreferences,
         error: state.error,
       }),

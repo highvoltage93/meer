@@ -13,19 +13,19 @@ const notificationStyles: Record<
 > = {
   info: {
     icon: <Info className="h-4 w-4" />,
-    className: 'border-cyan-300/20 bg-cyan-300/10 text-cyan-50',
+    className: 'border-cyan-200 bg-cyan-50/95 text-cyan-800',
   },
   success: {
     icon: <CheckCircle2 className="h-4 w-4" />,
-    className: 'border-emerald-300/20 bg-emerald-300/10 text-emerald-50',
+    className: 'border-emerald-200 bg-emerald-50/95 text-emerald-800',
   },
   warning: {
     icon: <Wifi className="h-4 w-4" />,
-    className: 'border-amber-300/25 bg-amber-300/10 text-amber-50',
+    className: 'border-amber-200 bg-amber-50/95 text-amber-800',
   },
   error: {
     icon: <AlertTriangle className="h-4 w-4" />,
-    className: 'border-rose-300/25 bg-rose-300/10 text-rose-50',
+    className: 'border-rose-200 bg-rose-50/95 text-rose-800',
   },
 };
 
@@ -48,23 +48,23 @@ export function NotificationCenter() {
               exit={{ opacity: 0, x: 24, scale: 0.96 }}
               transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
               className={cn(
-                'pointer-events-auto rounded-[22px] border px-4 py-3 shadow-2xl backdrop-blur-xl',
+                'pointer-events-auto rounded-[22px] border px-4 py-3 shadow-[0_18px_50px_rgba(15,23,42,0.16)] backdrop-blur-xl',
                 style.className,
               )}
             >
               <div className="flex items-start gap-3">
-                <div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/10">
+                <div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-full bg-white/70">
                   {style.icon}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-semibold text-white">{notification.title}</p>
+                  <p className="text-sm font-semibold text-slate-950">{notification.title}</p>
                   {notification.message ? (
-                    <p className="mt-1 text-sm leading-5 text-white/72">{notification.message}</p>
+                    <p className="mt-1 text-sm leading-5 text-slate-600">{notification.message}</p>
                   ) : null}
                 </div>
                 <button
                   type="button"
-                  className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-white/60 transition hover:bg-white/10 hover:text-white"
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-slate-500 transition hover:bg-white/70 hover:text-slate-950"
                   onClick={() => dismissNotification(notification.id)}
                   aria-label="Dismiss notification"
                 >
